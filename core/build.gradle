@@ -9,3 +9,17 @@ dependencies {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
   }
 }
+
+// Task to copy Greenfoot-style assets into LibGDX assets/
+tasks.register('copyGreenfootAssets', Copy) {
+    from('src/main/java/user-project') {
+        include '**/images/**'
+        include '**/sounds/**'
+    }
+    into("$rootDir/assets") //Will be copied to LibGDX-Greenfoot-Wrapper/assets
+}
+
+// Make sure assets are copied before run/build
+tasks.named('classes').configure {
+    dependsOn 'copyGreenfootAssets'
+}

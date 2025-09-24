@@ -1,34 +1,71 @@
 package id.qiupi3.greenfoot;
 
-import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.utils.ScreenUtils;
+
+import java.util.List;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import com.badlogic.gdx.Game;
+import com.badlogic.gdx.utils.reflect.ClassReflection;
+import com.badlogic.gdx.utils.reflect.ReflectionException;
+
+
+import greenfoot.World;
 
 /** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
-public class GreenfootGame extends ApplicationAdapter {
-    private SpriteBatch batch;
-    private Texture image;
+public class GreenfootGame extends Game {
 
     @Override
     public void create() {
-        batch = new SpriteBatch();
-        image = new Texture("libgdx.png");
+        // Try to find the main World subclass
+        Class<?> mainWorldClass = findMainWorld();
+
+        if (mainWorldClass == null) {
+            Gdx.app.error("GreenfootWrapper", "No World subclass found!");
+            return;
+        }
+
+        try {
+            World world = (World) ClassReflection.newInstance(mainWorldClass);
+            setScreen(world); // World extends Screen in your wrapper
+        } catch (ReflectionException e) {
+            Gdx.app.error("GreenfootWrapper", "Failed to create World: " + e.getMessage());
+        }
     }
 
-    @Override
-    public void render() {
-        ScreenUtils.clear(0.15f, 0.15f, 0.2f, 1f);
-        batch.begin();
-        batch.draw(image, 140, 210);
-        batch.end();
-    }
+    private Class<?> findMainWorld() {
+        try {
+            // Locate project.greenfoot
+            Path basePath = Paths.get("core/src/main/java/user-project");
+            Path projectName = Files.list(basePath).filter(Files::isDirectory).findFirst().orElse(null);
+            String projectPath = projectName.toString();
+            List<String> lines = Files.readAllLines(
+                Files.list(projectName)
+                .filter(
+                    p -> p.getFileName().toString()
+                            .equals("project.greenfoot")
+                )
+                .findFirst()
+                .orElse(null));
+            
+            for (String line : lines) {
+                if (line.startsWith("world.lastInstantiated=")) {
+                    String entryWorld = line.split("=")[1].trim();
+                    // E.g. "MyWorld" → user-project.MyWorld
+                    return Class.forName(projectPath.split("main/java/")[1]
+                            .trim()
+                            .replace("/", ".") + "." + entryWorld);
+                }
+            }
 
-    @Override
-    public void dispose() {
-        batch.dispose();
-        image.dispose();
+            return Class.forName(projectPath.split("main/java/")[1]
+                            .trim()
+                            .replace("/", ".") + ".MyWorld");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        
+        return null;
     }
 }
