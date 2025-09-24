@@ -9,24 +9,92 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import java.util.List;
 
 public abstract class World implements Screen {
-    protected int width;
-    protected int height;
-    protected int cellSize;
+    private static final greenfoot.Color DEFAULT_BACKGROUND_COLOR = greenfoot.Color.WHITE;
+    
+    private CollisionChecker collisionChecker = new ColManager();
+    
+    private TreeActorSet objectsDisordered = new TreeActorSet(); 
+    private TreeActorSet objectsInPaintOrder;    
+    private TreeActorSet objectsInActOrder;
+    private final List<TextLabel> textLabels = new ArrayList<>();
+    
+    private GreenfootImage backgroundImage;
+    private boolean backgroundIsClassImage = true;
 
-    protected SpriteBatch batch;
-    protected Texture background;
-
-    protected List<Actor> actors = new ArrayList<>();
-
-    public World(int width, int height, int cellSize) {
-        this.width = width;
-        this.height = height;
+    private final SpriteBatch batch;
+    private final BitmapFont font; // for showText()
+    
+    private final int width;
+    private final int height;
+    private final int cellSize;
+    private boolean isBounded;
+    
+    public World(int worldWidth, int worldHeight, int cellSize) {
+        this(worldWidth, worldHeight, cellSize, true);
+    }
+    
+    public World(int worldWidth, int worldHeight, int cellSize, boolean bounded) {
+        this.width = worldWidth;
+        this.height = worldHeight;
         this.cellSize = cellSize;
+        collisionChecker.initialize(worldWidth, worldHeight, cellSize, false);
+        this.isBounded = bounded;
         this.batch = new SpriteBatch();
+        this.font = new BitmapFont();
+        
+        backgroundIsClassImage = true;
+        setBackground(getClassImage());
+        
+        //Implement collisionChecker
+        
+        final WorldHandler wHandler = WorldHandler.getInstance();
+        if(wHandler != null) { // will be null when running unit tests.
+            wHandler.setInitialisingWorld(this);
+        }
     }
 
     // ---------------- Core Greenfoot API ----------------
 
+    final public void setBackground(GreenfootImage image) {
+        if (image != null) {
+            int imgWidth = image.getWidth();
+            int imgHeight = image.getHeight();
+            int worldWidth = getWidthInPixels();
+            int worldHeight = getHeightInPixels();
+            boolean tile = imgWidth < worldWidth || imgHeight < worldHeight;
+
+            if (tile) {
+                backgroundIsClassImage = false;
+
+                // Create a new blank image with default background color
+                GreenfootImage tiled = new GreenfootImage(worldWidth, worldHeight, DEFAULT_BACKGROUND_COLOR);
+
+                // Tile the image across
+                for (int x = 0; x < worldWidth; x += imgWidth) {
+                    for (int y = 0; y < worldHeight; y += imgHeight) {
+                        tiled.drawImage(image, x, y);
+                    }
+                }
+                backgroundImage = tiled;
+            } else {
+                // Just use the provided image directly
+                backgroundImage = image;
+            }
+        } else {
+            backgroundIsClassImage = false;
+            backgroundImage = new GreenfootImage(getWidthInPixels(), getHeightInPixels(), DEFAULT_BACKGROUND_COLOR);
+        }
+    }
+
+    final public void setBackground(String filename) throws IllegalArgumentException {
+        GreenfootImage bg = new GreenfootImage(filename);
+        setBackground(bg);
+    }
+
+    public Texture getBackground() {
+        return background;
+    }
+    
     // Greenfoot-like lifecycle methods
     public abstract void act();
 
@@ -73,15 +141,6 @@ public abstract class World implements Screen {
             }
         }
         return result;
-    }
-
-    public void setBackground(String filename) {
-        if (background != null) background.dispose();
-        background = new Texture(Gdx.files.internal(filename));
-    }
-
-    public Texture getBackground() {
-        return background;
     }
 
     // ---------------- LibGDX Screen lifecycle ----------------
