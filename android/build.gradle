@@ -73,6 +73,13 @@ dependencies {
 
 }
 
+// Ensure Android asset merging waits for core module to copy Greenfoot assets
+afterEvaluate {
+    tasks.named('mergeDebugAssets').configure {
+        dependsOn ':core:copyGreenfootAssets'
+    }
+}
+
 // Called every time gradle gets executed, takes the native dependencies of
 // the natives configuration, and extracts them to the proper libs/ folders
 // so they get packed with the APK.

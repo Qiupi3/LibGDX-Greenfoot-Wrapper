@@ -1,15 +1,9 @@
 package id.qiupi3.greenfoot;
 
 import com.badlogic.gdx.Gdx;
-
-import java.util.List;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import com.badlogic.gdx.Game;
 import com.badlogic.gdx.utils.reflect.ClassReflection;
 import com.badlogic.gdx.utils.reflect.ReflectionException;
-
 
 import greenfoot.World;
 
@@ -36,32 +30,32 @@ public class GreenfootGame extends Game {
 
     private Class<?> findMainWorld() {
         try {
-            // Locate project.greenfoot
-            Path basePath = Paths.get("core/src/main/java/user-project");
-            Path projectName = Files.list(basePath).filter(Files::isDirectory).findFirst().orElse(null);
-            String projectPath = projectName.toString();
-            List<String> lines = Files.readAllLines(
-                Files.list(projectName)
-                .filter(
-                    p -> p.getFileName().toString()
-                            .equals("project.greenfoot")
-                )
-                .findFirst()
-                .orElse(null));
-            
-            for (String line : lines) {
-                if (line.startsWith("world.lastInstantiated=")) {
-                    String entryWorld = line.split("=")[1].trim();
-                    // E.g. "MyWorld" → user-project.MyWorld
-                    return Class.forName(projectPath.split("main/java/")[1]
-                            .trim()
-                            .replace("/", ".") + "." + entryWorld);
+            // Use LibGDX internal file system to read project.greenfoot
+            com.badlogic.gdx.files.FileHandle projectFile = Gdx.files.internal("tes/project.greenfoot");
+            if (projectFile.exists()) {
+                String content = projectFile.readString();
+                String[] lines = content.split("\n");
+                
+                for (String line : lines) {
+                    if (line.startsWith("world.lastInstantiated=")) {
+                        String entryWorld = line.split("=")[1].trim();
+                        // Try to load class - first without package, then with package prefix
+                        try {
+                            return Class.forName(entryWorld);
+                        } catch (ClassNotFoundException e1) {
+                            // If that fails, try with the full package path (assume it's in user-project.tes package)
+                            return Class.forName("user-project.tes." + entryWorld);
+                        }
+                    }
                 }
             }
 
-            return Class.forName(projectPath.split("main/java/")[1]
-                            .trim()
-                            .replace("/", ".") + ".MyWorld");
+            // Try default MyWorld class - first without package, then with package prefix
+            try {
+                return Class.forName("MyWorld");
+            } catch (ClassNotFoundException e1) {
+                return Class.forName("user-project.tes.MyWorld");
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }

@@ -43,6 +43,11 @@ dependencies {
 
 def os = System.properties['os.name'].toLowerCase()
 
+// Ensure processResources waits for core module to copy Greenfoot assets
+tasks.named('processResources').configure {
+    dependsOn ':core:copyGreenfootAssets'
+}
+
 run {
   workingDir = rootProject.file('assets').path
 // You can uncomment the next line if your IDE claims a build failure even when the app closed properly.
