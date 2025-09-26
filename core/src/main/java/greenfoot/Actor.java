@@ -451,7 +451,10 @@ public class Actor {
     private void updatePixelPosition() {
         if (world != null) {
             int cellSize = world.getCellSize();
-            position.set(x * cellSize + cellSize / 2f, y * cellSize + cellSize / 2f);
+            // Convert from Greenfoot coordinates (top-left origin, Y down) to LibGDX coordinates (bottom-left origin, Y up)
+            float pixelX = x * cellSize + cellSize / 2f;
+            float pixelY = world.getHeightInPixels() - (y * cellSize + cellSize / 2f);
+            position.set(pixelX, pixelY);
             
             if (sprite != null) {
                 sprite.setCenter(position.x, position.y);
@@ -505,14 +508,53 @@ public class Actor {
      * Try to load a texture specific to this class.
      */
     private Texture getClassTexture() {
-        String className = getClass().getSimpleName().toLowerCase();
+        String className = getClass().getSimpleName();
+        
+        // Try to get image from project.greenfoot configuration
         try {
-            // Try to load image with class name
-            if (Gdx.files.internal("images/" + className + ".png").exists()) {
-                return new Texture(Gdx.files.internal("images/" + className + ".png"));
+            String imageFileName = getImageFromProjectFile(className);
+            if (imageFileName != null) {
+                // Try to load the specified image
+                if (Gdx.files.internal("tes/images/" + imageFileName).exists()) {
+                    return new Texture(Gdx.files.internal("tes/images/" + imageFileName));
+                }
+            }
+        } catch (Exception e) {
+            // Continue to fallback method
+        }
+        
+        // Fallback: try to load image with class name
+        try {
+            String classNameLower = className.toLowerCase();
+            if (Gdx.files.internal("tes/images/" + classNameLower + ".png").exists()) {
+                return new Texture(Gdx.files.internal("tes/images/" + classNameLower + ".png"));
             }
         } catch (Exception e) {
             // Ignore and continue
+        }
+        return null;
+    }
+    
+    /**
+     * Get the image filename for a class from project.greenfoot file.
+     */
+    private String getImageFromProjectFile(String className) {
+        try {
+            // Use LibGDX internal file system (works on all platforms including Android)
+            com.badlogic.gdx.files.FileHandle projectFile = com.badlogic.gdx.Gdx.files.internal("tes/project.greenfoot");
+            if (projectFile.exists()) {
+                String content = projectFile.readString();
+                String[] lines = content.split("\n");
+                String searchPattern = "class." + className + ".image=";
+                
+                for (String line : lines) {
+                    if (line.startsWith(searchPattern)) {
+                        return line.substring(searchPattern.length()).trim();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore and return null
         }
         return null;
     }

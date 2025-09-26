@@ -10,16 +10,38 @@ dependencies {
   }
 }
 
-// Task to copy Greenfoot-style assets into LibGDX assets/
+// Enhanced task to automatically copy all Greenfoot project assets
 tasks.register('copyGreenfootAssets', Copy) {
+    description 'Copies Greenfoot project assets (images, sounds, project.greenfoot) to assets directory'
+    
     from('src/main/java/user-project') {
-        include '**/images/**'
-        include '**/sounds/**'
+        include '**/*.greenfoot'     // Copy project.greenfoot files
+        include '**/images/**'       // Copy all images
+        include '**/sounds/**'       // Copy all sounds
     }
-    into("$rootDir/assets") //Will be copied to LibGDX-Greenfoot-Wrapper/assets
+    
+    into '../assets'
+    
+    // Preserve directory structure
+    includeEmptyDirs = false
+    
+    doLast {
+        println "Copied Greenfoot project assets to assets directory"
+        
+        // List what was copied for verification
+        def assetsDir = file('../assets')
+        if (assetsDir.exists()) {
+            println "Assets directory contents:"
+            assetsDir.eachFileRecurse { file ->
+                if (file.isFile()) {
+                    println "  - ${file.path.substring(assetsDir.path.length() + 1)}"
+                }
+            }
+        }
+    }
 }
 
-// Make sure assets are copied before run/build
-tasks.named('classes').configure {
+// Make sure assets are copied before any build tasks
+tasks.named('compileJava').configure {
     dependsOn 'copyGreenfootAssets'
 }
