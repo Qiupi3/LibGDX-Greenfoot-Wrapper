@@ -1,4 +1,26 @@
-package greenfoot;
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
+package greenfoot.collision;
 
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
@@ -8,13 +30,29 @@ import com.badlogic.gdx.utils.ObjectMap;
 import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.Pool;
 
+import greenfoot.Actor;
+
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * LibGDX-based collision manager that handles spatial partitioning and collision detection
  * using LibGDX's optimized data structures and math library.
+ * 
+ * This class re-implements greenfoot.collision.platforms.ColManager to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
+ * 
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
+
 public class ColManager implements CollisionChecker {
     
     // World properties

@@ -1,3 +1,25 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 import java.util.ArrayList;
@@ -7,20 +29,45 @@ import java.util.List;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.utils.viewport.StretchViewport;
+import com.badlogic.gdx.utils.viewport.Viewport;
+
+import greenfoot.collision.ColManager;
+import greenfoot.collision.CollisionChecker;
 
 import com.badlogic.gdx.utils.Array;
-
 
 /**
  * LibGDX-based World implementation that serves as a Screen and container for Actors.
  * Uses LibGDX's rendering system and our custom collision management.
+ * 
+ * This class is the superclass of all worlds. A world is the area in which
+ * actors live. It is a two-dimensional grid of cells, each of which can hold
+ * one or more actors. The size of the cells is specified when the world is created.
+ * 
+ * This class re-implements greenfoot.World to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/World.html
+ * 
+ * @see greenfoot.Actor
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * @author Michael Kolling (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
+
 public abstract class World implements Screen {
-    
     // Default background color (white)
     private static final greenfoot.Color DEFAULT_BACKGROUND_COLOR = greenfoot.Color.WHITE;
     
@@ -39,11 +86,17 @@ public abstract class World implements Screen {
     private Texture backgroundTexture;
     private com.badlogic.gdx.graphics.Color backgroundColor;
     private boolean hasBackgroundTexture = false;
+    private Texture whitePixel; // 1x1 white texture for rendering backgrounds
+
+    private GreenfootImage backgroundImage;
+    private boolean backgroundIsClassImage;
     
     // LibGDX rendering components
     private SpriteBatch batch;
     private BitmapFont font;
     private ShapeRenderer shapeRenderer;
+    private OrthographicCamera camera;
+    private Viewport viewport;
     
     // World properties
     protected final int width;
@@ -77,9 +130,22 @@ public abstract class World implements Screen {
         this.font = new BitmapFont();
         this.shapeRenderer = new ShapeRenderer();
         
+        // Initialize camera and viewport for proper scaling
+        this.camera = new OrthographicCamera();
+        this.viewport = new StretchViewport(worldWidth * cellSize, worldHeight * cellSize, camera);
+        this.camera.position.set(viewport.getWorldWidth() / 2f, viewport.getWorldHeight() / 2f, 0);
+        this.camera.update();
+        
         // Initialize collections
         this.allActors = new Array<Actor>();
         this.textLabels = new Array<TextLabel>();
+        
+        // Create 1x1 white texture for backgrounds
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(1, 1, 1, 1); // White color
+        pixmap.fill();
+        this.whitePixel = new Texture(pixmap);
+        pixmap.dispose();
         
         // Initialize collision system
         this.collisionChecker = new ColManager();
@@ -87,11 +153,11 @@ public abstract class World implements Screen {
         
         // Set default background
         this.backgroundColor = DEFAULT_BACKGROUND_COLOR.toLibGDXColor();
+        backgroundIsClassImage = true;
         
         // Try to load class-specific background
         loadClassBackground();
     }
-
     
     // ================ Core World API ================
     
@@ -136,19 +202,83 @@ public abstract class World implements Screen {
         } else {
             backgroundColor = DEFAULT_BACKGROUND_COLOR.toLibGDXColor();
         }
+        // Clear GreenfootImage background
+        backgroundImage = null;
+        backgroundIsClassImage = false;
     }
     
     /**
-     * Get the background color.
+     * Set the background from a GreenfootImage.
+     * This method handles tiling if the image is smaller than the world.
      */
-    public Color getBackground() {
-        // Convert LibGDX Color back to Greenfoot Color
-        if (backgroundColor != null) {
-            return Color.fromLibGDXColor(backgroundColor);
+    public final void setBackground(GreenfootImage image)
+    {
+        if (image != null) {
+            int imgWidth = image.getWidth();
+            int imgHeight = image.getHeight();
+            int worldWidth = getWidthInPixels();
+            int worldHeight = getHeightInPixels();
+            boolean tile = imgWidth < worldWidth || imgHeight < worldHeight;
+
+            if (tile) {
+                backgroundIsClassImage = false;
+                backgroundImage = new GreenfootImage(worldWidth, worldHeight);
+                backgroundImage.setColor(DEFAULT_BACKGROUND_COLOR);
+                backgroundImage.fill();
+
+                for (int x = 0; x < worldWidth; x += imgWidth) {
+                    for (int y = 0; y < worldHeight; y += imgHeight) {
+                        backgroundImage.drawImage(image, x, y);
+                    }
+                }
+            }
+            else {
+                // To make it behave exactly the same way as when tiling we
+                // should make a clone here. But it performs better when not cloning.
+                // Performance will be an issue for people changing the
+                // background image all the time for animated backgrounds
+                backgroundImage = image;
+                backgroundIsClassImage = false;
+            }
+            
+            // Update texture for rendering
+            if (backgroundTexture != null) {
+                backgroundTexture.dispose();
+            }
+            backgroundTexture = backgroundImage.getTexture();
+            hasBackgroundTexture = true;
         }
-        return Color.WHITE;
+        else {
+            backgroundIsClassImage = false;
+            backgroundImage = null;
+            if (backgroundTexture != null) {
+                backgroundTexture.dispose();
+                backgroundTexture = null;
+            }
+            hasBackgroundTexture = false;
+        }
     }
-    
+
+    /**
+     * Get the background image (if set).
+     * Returns null if background is a solid color or no background is set.
+     */
+    public GreenfootImage getBackground() {
+        if (backgroundImage == null) {
+            backgroundImage = new GreenfootImage(getWidthInPixels(), getHeightInPixels());
+            backgroundImage.setColor(DEFAULT_BACKGROUND_COLOR);
+            backgroundImage.fill();
+            backgroundIsClassImage = false;
+        }
+        else if (backgroundIsClassImage) {
+            // Make the image a copy of the original to avoid modifications
+            // to the original.
+            backgroundImage = backgroundImage.getCopyOnWriteClone();
+            backgroundIsClassImage = false;
+        }
+        return backgroundImage;
+    }
+
     /**
      * Get the background color at a specific cell location.
      */
@@ -305,6 +435,34 @@ public abstract class World implements Screen {
     public int numberOfObjects() {
         return allActors.size;
     }
+
+    /**
+     * Request a repaint of the world.
+     */
+    public void repaint() {
+        // In LibGDX, rendering happens automatically
+    }
+
+    /**
+     * Act method called each simulation step.
+     */
+    public void act() {
+        // Override in subclasses
+    }
+
+    /**
+     * Called when the simulation is started.
+     */
+    public void started() {
+        // Override in subclasses
+    }
+    
+    /**
+     * Called when the simulation is stopped.
+     */
+    public void stopped() {
+        // Override in subclasses
+    }
     
     /**
      * Get objects at a specific grid location.
@@ -333,34 +491,12 @@ public abstract class World implements Screen {
         }
     }
     
-    // ================ World Lifecycle Methods ================
-    
     /**
-     * Called when the simulation is started.
+     * Get all text labels currently displayed in the world.
+     * Package-private method for WorldVisitor access.
      */
-    public void started() {
-        // Override in subclasses
-    }
-    
-    /**
-     * Called when the simulation is stopped.
-     */
-    public void stopped() {
-        // Override in subclasses
-    }
-    
-    /**
-     * Act method called each simulation step.
-     */
-    public void act() {
-        // Override in subclasses
-    }
-    
-    /**
-     * Request a repaint of the world.
-     */
-    public void repaint() {
-        // In LibGDX, rendering happens automatically
+    Array<TextLabel> getTextLabels() {
+        return textLabels;
     }
     
     // ================ Collision and Object Query Methods ================
@@ -448,16 +584,23 @@ public abstract class World implements Screen {
     
     @Override
     public void render(float delta) {
+        // Update viewport and apply camera
+        viewport.apply();
+        camera.update();
+        
         // Clear screen with background color
         Gdx.gl.glClearColor(backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
         
+        // Set batch to use camera's combined matrix for proper scaling
+        batch.setProjectionMatrix(camera.combined);
+        
         // Begin batch rendering
         batch.begin();
         
-        // Draw background texture if available
+        // Draw background texture if available (scaled to fill viewport)
         if (hasBackgroundTexture && backgroundTexture != null) {
-            batch.draw(backgroundTexture, 0, 0, getWidthInPixels(), getHeightInPixels());
+            batch.draw(backgroundTexture, 0, 0, viewport.getWorldWidth(), viewport.getWorldHeight());
         }
         
         // Render all actors in paint order
@@ -475,10 +618,32 @@ public abstract class World implements Screen {
             font.draw(batch, label.getText(), pixelX, pixelY);
         }
         
+        // Show pause indicator when simulation is paused
+        if (Greenfoot.isPaused()) {
+            // Draw "PAUSED" text in the center of the screen
+            String pauseText = "PAUSED";
+            com.badlogic.gdx.graphics.g2d.GlyphLayout layout = new com.badlogic.gdx.graphics.g2d.GlyphLayout(font, pauseText);
+            float textX = (viewport.getWorldWidth() - layout.width) / 2;
+            float textY = (viewport.getWorldHeight() + layout.height) / 2;
+            
+            // Draw semi-transparent background for better text visibility
+            batch.setColor(0, 0, 0, 0.7f);
+            batch.draw(whitePixel, textX - 10, textY - layout.height - 10, layout.width + 20, layout.height + 20);
+            batch.setColor(1, 1, 1, 1); // Reset to white
+            
+            font.draw(batch, pauseText, textX, textY);
+        }
+        
         batch.end();
         
-        // Update actors (act step)
-        if (delta > 0) {
+        // Handle pause/resume keyboard shortcut (P key or ESC key)
+        if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.P) || 
+            Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.ESCAPE)) {
+            Greenfoot.togglePause();
+        }
+        
+        // Update actors (act step) - only if not paused
+        if (delta > 0 && !Greenfoot.isPaused()) {
             startSequence();
             
             // Call world act method
@@ -496,7 +661,9 @@ public abstract class World implements Screen {
     
     @Override
     public void resize(int width, int height) {
-        // Handle screen resize if needed
+        // Update viewport when screen size changes
+        viewport.update(width, height);
+        camera.update();
     }
     
     @Override
@@ -528,6 +695,9 @@ public abstract class World implements Screen {
         }
         if (shapeRenderer != null) {
             shapeRenderer.dispose();
+        }
+        if (whitePixel != null) {
+            whitePixel.dispose();
         }
         
         // Dispose all actors
@@ -723,8 +893,9 @@ public abstract class World implements Screen {
     
     /**
      * Text label for showText functionality.
+     * Package-private for WorldVisitor access.
      */
-    private static class TextLabel {
+    static class TextLabel {
         private final String text;
         private final int x, y;
         

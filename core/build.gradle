@@ -45,3 +45,23 @@ tasks.register('copyGreenfootAssets', Copy) {
 tasks.named('compileJava').configure {
     dependsOn 'copyGreenfootAssets'
 }
+
+// Also ensure the Android tasks depend on our asset copying
+afterEvaluate {
+    // For desktop (lwjgl3)
+    if (project(':lwjgl3') != null) {
+        project(':lwjgl3').tasks.matching { it.name.contains('processResources') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+    }
+    
+    // For Android
+    if (project(':android') != null) {
+        project(':android').tasks.matching { it.name.contains('mergeDebugAssets') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+        project(':android').tasks.matching { it.name.contains('mergeReleaseAssets') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+    }
+}

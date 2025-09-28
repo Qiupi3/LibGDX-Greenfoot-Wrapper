@@ -9,9 +9,12 @@ import greenfoot.World;
 
 /** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
 public class GreenfootGame extends Game {
+    private static GreenfootGame instance;
 
     @Override
     public void create() {
+        instance = this; // Store static reference for controller access
+        
         // Try to find the main World subclass
         Class<?> mainWorldClass = findMainWorld();
 
@@ -61,5 +64,31 @@ public class GreenfootGame extends Game {
         }
         
         return null;
+    }
+    
+    /**
+     * Static method to check virtual controller input.
+     * This allows actors to check controller input regardless of platform.
+     */
+    public static boolean isVirtualControllerPressed(String direction) {
+        if (instance != null && instance instanceof AndroidControllerInterface) {
+            AndroidControllerInterface controller = (AndroidControllerInterface) instance;
+            switch (direction.toLowerCase()) {
+                case "up": return controller.isUpPressed();
+                case "down": return controller.isDownPressed();
+                case "left": return controller.isLeftPressed();
+                case "right": return controller.isRightPressed();
+                case "action": return controller.isActionPressed();
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Check if running on Android platform
+     */
+    public static boolean isAndroidPlatform() {
+        return instance != null && instance instanceof AndroidControllerInterface && 
+               ((AndroidControllerInterface) instance).isAndroid();
     }
 }

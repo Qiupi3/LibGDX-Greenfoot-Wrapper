@@ -1,3 +1,25 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 import com.badlogic.gdx.Gdx;
@@ -9,11 +31,21 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFont
  * A LibGDX-based representation of a Font. The Font can be used to write text on the screen.
  * This implementation uses LibGDX BitmapFont while maintaining Greenfoot API compatibility.
  *
- * @author Fabio Heday
- * @author Amjad Altadmri
+ * This class re-implements greenfoot.Font to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/Font.html
+ * 
+ * @author Fabio Heday (Original Greenfoot version's author)
+ * @author Amjad Altadmri (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
-public class Font
-{
+public class Font {
     private final BitmapFont bitmapFont;
     private final String name;
     private final boolean bold;
@@ -29,8 +61,7 @@ public class Font
      * @param italic Whether the font is italic
      * @param size The font size
      */
-    Font(BitmapFont bitmapFont, String name, boolean bold, boolean italic, int size)
-    {
+    Font(BitmapFont bitmapFont, String name, boolean bold, boolean italic, int size) {
         this.bitmapFont = bitmapFont;
         this.name = name;
         this.bold = bold;
@@ -46,8 +77,7 @@ public class Font
      * @param italic True if the font is meant to be italic
      * @param size The size of the font
      */
-    public Font(String name, boolean bold, boolean italic, int size)
-    {
+    public Font(String name, boolean bold, boolean italic, int size) {
         this.name = name;
         this.bold = bold;
         this.italic = italic;
@@ -62,8 +92,7 @@ public class Font
      * @param italic True if the font is meant to be italic
      * @param size The size of the font
      */
-    public Font(boolean bold, boolean italic, int size)
-    {
+    public Font(boolean bold, boolean italic, int size) {
         this("SansSerif", bold, italic, size);
     }
 
@@ -73,8 +102,7 @@ public class Font
      * @param name The font name
      * @param size The size of the font
      */
-    public Font(String name, int size)
-    {
+    public Font(String name, int size) {
         this(name, false, false, size);
     }
 
@@ -83,8 +111,7 @@ public class Font
      *
      * @param size The size of the font
      */
-    public Font(int size)
-    {
+    public Font(int size) {
         this(false, false, size);
     }
 
@@ -93,8 +120,7 @@ public class Font
      *
      * @return true if this font style is plain; false otherwise
      */
-    public boolean isPlain()
-    {
+    public boolean isPlain() {
         return !bold && !italic;
     }
 
@@ -103,8 +129,7 @@ public class Font
      *
      * @return true if this font style is bold; false otherwise
      */
-    public boolean isBold()
-    {
+    public boolean isBold() {
         return bold;
     }
 
@@ -113,8 +138,7 @@ public class Font
      *
      * @return true if this font style is italic; false otherwise
      */
-    public boolean isItalic()
-    {
+    public boolean isItalic() {
         return italic;
     }
 
@@ -123,8 +147,7 @@ public class Font
      *
      * @return a <code>String</code> representing the logical name of this font.
      */
-    public String getName()
-    {
+    public String getName() {
         return name;
     }
 
@@ -133,8 +156,7 @@ public class Font
      *
      * @return the point size of this font in 1/72 of an inch units.
      */
-    public int getSize()
-    {
+    public int getSize() {
         return size;
     }
 
@@ -145,8 +167,7 @@ public class Font
      * @param size the size for the new <code>Font</code>.
      * @return a new <code>Font</code> object.
      */
-    public Font deriveFont(int size)
-    {
+    public Font deriveFont(int size) {
         return new Font(this.name, this.bold, this.italic, size);
     }
 
@@ -157,8 +178,7 @@ public class Font
      * @param size the size for the new <code>Font</code>.
      * @return a new <code>Font</code> object.
      */
-    public Font deriveFont(float size)
-    {
+    public Font deriveFont(float size) {
         return new Font(this.name, this.bold, this.italic, (int) size);
     }
 
@@ -169,8 +189,7 @@ public class Font
      * @return true if the fonts are the same; false otherwise.
      */
     @Override
-    public boolean equals(Object obj)
-    {
+    public boolean equals(Object obj) {
         if (obj == this) {
             return true;
         }
@@ -185,8 +204,7 @@ public class Font
      * @return a hashcode value for this font.
      */
     @Override
-    public int hashCode()
-    {
+    public int hashCode() {
         return name.hashCode() ^ size ^ (bold ? 1 : 0) ^ (italic ? 2 : 0);
     }
 
@@ -195,8 +213,7 @@ public class Font
      * @return Details of the font
      */
     @Override
-    public String toString()
-    {
+    public String toString() {
         return "Font{name='" + name + "', size=" + size + ", bold=" + bold + ", italic=" + italic + '}';
     }
 
@@ -205,8 +222,7 @@ public class Font
      *
      * @return the BitmapFont object for LibGDX compatibility
      */
-    public BitmapFont getFontObject()
-    {
+    public BitmapFont getFontObject() {
         return this.bitmapFont;
     }
 
@@ -214,8 +230,7 @@ public class Font
      * Get the LibGDX BitmapFont instance for rendering.
      * This method is for internal use by the LibGDX wrapper.
      */
-    public BitmapFont getBitmapFont()
-    {
+    public BitmapFont getBitmapFont() {
         return bitmapFont;
     }
 
@@ -223,8 +238,7 @@ public class Font
      * Creates a BitmapFont from the given parameters using LibGDX.
      * Uses default font if FreeType is not available.
      */
-    private static BitmapFont createBitmapFont(String name, boolean bold, boolean italic, int size)
-    {
+    private static BitmapFont createBitmapFont(String name, boolean bold, boolean italic, int size) {
         try {
             // Try to use FreeType font generator for better quality
             FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal("fonts/default.ttf"));
@@ -240,5 +254,4 @@ public class Font
             return defaultFont;
         }
     }
-
 }

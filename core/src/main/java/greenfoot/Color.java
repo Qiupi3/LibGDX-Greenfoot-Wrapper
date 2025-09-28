@@ -1,10 +1,44 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 /**
  * Greenfoot Color class with compatibility for LibGDX.
+ * 
+ * This class re-implements greenfoot.Color to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/Color.html
+ * 
+ * @author Fabio Heday (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
 public class Color {
-    
     // Color components (0-255)
     private final int red;
     private final int green;
@@ -115,6 +149,8 @@ public class Color {
     
     @Override
     public String toString() {
+        // NOTE: This format isn't exactly the same as the original Greenfoot, and might
+        // need to match the output of the original toString() method later.
         return "Color[r=" + red + ",g=" + green + ",b=" + blue + ",t=" + transparency + "]";
     }
     
@@ -144,5 +180,9 @@ public class Color {
     
     private int clamp(int value) {
         return Math.max(0, Math.min(255, value));
+    }
+
+    Color getColorObject() {
+        return this;
     }
 }

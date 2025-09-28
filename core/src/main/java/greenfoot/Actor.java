@@ -1,3 +1,25 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 import java.util.List;
@@ -13,6 +35,18 @@ import com.badlogic.gdx.math.MathUtils;
 /**
  * Actor class implementation using LibGDX methods.
  * This class represents game objects that can be placed in a World.
+ *
+ * This class re-implements greenfoot.Actor to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at https://www.greenfoot.org/files/javadoc/greenfoot/Actor.html
+ * 
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
 public class Actor {
     private static final String ACTOR_NEVER_IN_WORLD = "Actor not in world. You must add it to a world before you can call this method.";
@@ -80,7 +114,6 @@ public class Actor {
             }
         }
     }
-        // original.
     
     /**
      * Act method - called each simulation step. Override in subclasses.
@@ -239,15 +272,14 @@ public class Actor {
         setLocation(x, y);
         addedToWorld(world);
     }
+    
     /**
      * Get the current image of this actor.
      */
     public GreenfootImage getImage() {
         if (texture != null) {
-            // Create a GreenfootImage from the texture
-            GreenfootImage image = new GreenfootImage(texture.getWidth(), texture.getHeight());
-            // TODO: Convert texture data to GreenfootImage properly
-            return image;
+            // Create a GreenfootImage from the texture using the internal constructor
+            return new GreenfootImage(texture);
         }
         return new GreenfootImage(32, 32); // Default size
     }
@@ -315,7 +347,7 @@ public class Actor {
     /**
      * Check if this actor intersects with another actor.
      */
-    protected boolean intersects(Actor other) {
+    public boolean intersects(Actor other) {
         failIfNotInWorld();
         
         if (other == null || other.world == null) {

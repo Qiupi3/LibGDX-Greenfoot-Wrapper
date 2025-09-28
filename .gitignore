@@ -155,6 +155,7 @@ Thumbs.db
 /.kotlin/
 /assets/assets.txt
 .vscode/
+core/src/main/java/user-project/**/*
 
 ## Special cases:
 

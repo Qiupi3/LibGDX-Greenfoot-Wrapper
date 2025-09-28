@@ -1,3 +1,25 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 import com.badlogic.gdx.Gdx;
@@ -7,45 +29,22 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- * <p>The UserInfo class can be used to store data permanently on a server, and
- * to share this data between different users, when the scenario runs on the
- * Greenfoot web site. This can be used to implement shared high score tables
- * or other examples of shared data.</p>
- *
- * <p>Storage is only available when the current user is logged in on the Greenfoot
- * site, so for some users storage will not be available. Always use
- * UserInfo.isStorageAvailable() to check before accessing the user data.</p>
- *
- * <p>A typical code snippet for storing a high score is as follows:</p>
- *
- * <pre>
- *     if (UserInfo.isStorageAvailable()) {
- *         UserInfo myInfo = UserInfo.getMyInfo();
- *         if (newScore &gt; myInfo.getScore()) {
- *             myInfo.setScore(newScore);
- *             myInfo.store();  // write back to server
- *         }
- *     }
- * </pre>
- * <p>Methods to retrieve user data include getting data for the current user
- * (getMyInfo()), the top scorers (e.g. getTop(10) for the top 10), and data
- * for users with scores near my own score (e.g. getNearby(10)).</p>
- *
- * <p>The data that can be stored for each user consists of a score, 10
- * additional general purpose integers, and 5 strings (limited to 50 characters
- * in length). In addition, the user name and user's image can be retrieved from
- * the user data.</p>
- *
- * <p>For testing purposes, while running within Greenfoot (not on the web site),
- * the user name can be set in the preferences (CTRL-SHIFT-P / CMD-SHIFT-P).
- * This allows to simulate different users during development. When running
- * on the web site, the user name is the name used to log in to the site.</p>
+ * A representation of user data that can be stored and retrieved.
  * 
- * @author Neil Brown
- * @version 2.4
+ * This class re-implements greenfoot.UserInfo to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/UserInfo.html
+ * 
+ * @author Neil Brown (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
-public class UserInfo
-{
+public class UserInfo {
     // These may enlarge in future:
     
     /** The number of integers that can be stored */
@@ -63,8 +62,7 @@ public class UserInfo
     private int rank;
     
     //package-visible:
-    UserInfo(String userName, int rank)
-    {
+    UserInfo(String userName, int rank) {
         this.userName = userName;
         this.rank = rank;
         score = 0;
@@ -73,8 +71,7 @@ public class UserInfo
     }
     
     //package-visible:
-    void setRank(int n)
-    {
+    void setRank(int n) {
         rank = n;
     }
     
@@ -83,8 +80,7 @@ public class UserInfo
      * 
      * @return The username as a String.
      */
-    public String getUserName()
-    {
+    public String getUserName() {
         return userName;
     }
     
@@ -96,8 +92,7 @@ public class UserInfo
      * @param index  The index of the array where the needed int is positioned.
      * @return The value of the number in the given index of the array.
      */
-    public int getInt(int index)
-    {
+    public int getInt(int index) {
         return ints[index];
     }
     
@@ -109,8 +104,7 @@ public class UserInfo
      * @param index The index at which to fetch a string
      * @return The String at that index, or the empty String if none has been stored.
      */
-    public String getString(int index)
-    {
+    public String getString(int index) {
         return strings[index] == null ? "" : strings[index];
     }
     
@@ -122,8 +116,7 @@ public class UserInfo
      * @param index The index at which to store the integer
      * @param value The integer value to store
      */
-    public void setInt(int index, int value)
-    {
+    public void setInt(int index, int value) {
         ints[index] = value;
     }
 
@@ -137,8 +130,7 @@ public class UserInfo
      * @param index The index at which to store the String
      * @param value The String value to store.
      */
-    public void setString(int index, String value)
-    {
+    public void setString(int index, String value) {
         if (value != null && value.length() > STRING_LENGTH_LIMIT)
         {
             System.err.println("Error: tried to store a String of length " + value.length() + " in UserInfo, which is longer than UserInfo.STRING_LENGTH_LIMIT (" + STRING_LENGTH_LIMIT + ")");
@@ -154,8 +146,7 @@ public class UserInfo
      *
      * @return The user's score.
      */
-    public int getScore()
-    {
+    public int getScore() {
         return score;
     }
     
@@ -176,8 +167,7 @@ public class UserInfo
      *
      * @param score The score to set
      */
-    public void setScore(int score)
-    {
+    public void setScore(int score) {
         this.score = score;
     }
     
@@ -194,8 +184,7 @@ public class UserInfo
      *
      * @return The user's overall rank for this scenario.
      */
-    public int getRank()
-    {
+    public int getRank() {
         return rank;
     }
     
@@ -207,8 +196,7 @@ public class UserInfo
      *
      * @return Whether storage is available.
      */
-    public static boolean isStorageAvailable()
-    {
+    public static boolean isStorageAvailable() {
         // LibGDX Preferences are always available for local storage
         return true;
     }
@@ -221,8 +209,7 @@ public class UserInfo
      * 
      * @return the user's data, or null if there was a problem.
      */
-    public static UserInfo getMyInfo()
-    {
+    public static UserInfo getMyInfo() {
         try {
             Preferences prefs = Gdx.app.getPreferences("greenfoot-userinfo");
             
@@ -260,8 +247,7 @@ public class UserInfo
      * 
      * @return true if stored successfully, false if there was a problem.
      */
-    public boolean store()
-    {
+    public boolean store() {
         try {
             Preferences prefs = Gdx.app.getPreferences("greenfoot-userinfo");
             
@@ -299,8 +285,7 @@ public class UserInfo
      * @param maxAmount The maximum number of data items to retrieve (ignored in local implementation).
      * @return A list with the current user's data, or null if there was a problem
      */
-    public static List<UserInfo> getTop(int maxAmount)
-    {
+    public static List<UserInfo> getTop(int maxAmount) {
         UserInfo myInfo = getMyInfo();
         if (myInfo != null) {
             List<UserInfo> result = new ArrayList<UserInfo>();
@@ -321,8 +306,7 @@ public class UserInfo
      * @param maxAmount The maximum number of data items to retrieve (ignored in local implementation).  
      * @return A list with the current user's data, or null if there was a problem
      */
-    public static List<UserInfo> getNearby(int maxAmount)
-    {
+    public static List<UserInfo> getNearby(int maxAmount) {
         // Same as getTop for local implementation
         return getTop(maxAmount);
     }
@@ -335,8 +319,7 @@ public class UserInfo
      *
      * @return A 50x50 pixel GreenfootImage
      */
-    public GreenfootImage getUserImage()
-    {
+    public GreenfootImage getUserImage() {
         // Create a simple placeholder image
         // The actual implementation would depend on the GreenfootImage class
         GreenfootImage image = new GreenfootImage(50, 50);
