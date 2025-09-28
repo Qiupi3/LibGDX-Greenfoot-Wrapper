@@ -9,9 +9,19 @@ import greenfoot.World;
 
 /** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
 public class GreenfootGame extends Game {
+    private static GreenfootGame instance;
+
+    /**
+     * Get the singleton instance of GreenfootGame
+     */
+    public static GreenfootGame getInstance() {
+        return instance;
+    }
 
     @Override
     public void create() {
+        instance = this; // Store static reference for controller access
+        
         // Try to find the main World subclass
         Class<?> mainWorldClass = findMainWorld();
 
@@ -22,7 +32,9 @@ public class GreenfootGame extends Game {
 
         try {
             World world = (World) ClassReflection.newInstance(mainWorldClass);
-            setScreen(world); // World extends Screen in your wrapper
+            // Registering the world sets the LibGDX screen too (through WorldHandler,
+            // which wraps the world in a WorldScreen), so there is nothing else to do.
+            greenfoot.Greenfoot.setWorld(world);
         } catch (ReflectionException e) {
             Gdx.app.error("GreenfootWrapper", "Failed to create World: " + e.getMessage());
         }
@@ -30,36 +42,175 @@ public class GreenfootGame extends Game {
 
     private Class<?> findMainWorld() {
         try {
-            // Use LibGDX internal file system to read project.greenfoot
-            com.badlogic.gdx.files.FileHandle projectFile = Gdx.files.internal("tes/project.greenfoot");
+            // Use dynamic project folder detection
+            String projectFolder = GreenfootProjectConfig.getUserProjectFolder();
+            String projectFilePath = projectFolder + "/project.greenfoot";
+            
+            com.badlogic.gdx.files.FileHandle projectFile = Gdx.files.internal(projectFilePath);
+            System.out.println("Looking for project.greenfoot at: " + projectFile.path());
+            System.out.println("Project folder detected as: " + projectFolder);
+            
             if (projectFile.exists()) {
                 String content = projectFile.readString();
                 String[] lines = content.split("\n");
                 
                 for (String line : lines) {
                     if (line.startsWith("world.lastInstantiated=")) {
+                        System.out.println("Found entry world line: " + line);
                         String entryWorld = line.split("=")[1].trim();
-                        // Try to load class - first without package, then with package prefix
+                        System.out.println("Trying to load class: " + entryWorld);
+                        
+                        // Since the classes are in the default package, try loading directly
                         try {
                             return Class.forName(entryWorld);
                         } catch (ClassNotFoundException e1) {
-                            // If that fails, try with the full package path (assume it's in user-project.tes package)
-                            return Class.forName("user-project.tes." + entryWorld);
+                            System.out.println("Class not found in default package: " + e1.getMessage());
+                            // If direct loading fails, the class might not be compiled or accessible
+                            // This could happen if the class files are not in the classpath
                         }
                     }
                 }
-            }
-
-            // Try default MyWorld class - first without package, then with package prefix
-            try {
-                return Class.forName("MyWorld");
-            } catch (ClassNotFoundException e1) {
-                return Class.forName("user-project.tes.MyWorld");
+            } else {
+                System.out.println("project.greenfoot file not found at: " + projectFilePath);
+                // Print debug info to help with troubleshooting
+                System.out.println(GreenfootProjectConfig.getDebugInfo());
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
         
         return null;
+    }
+    
+    /**
+     * Static method to check virtual controller input.
+     * This allows actors to check controller input regardless of platform.
+     * Now supports the flexible button system with enhanced mappings.
+     */
+    public static boolean isVirtualControllerPressed(String direction) {
+        if (instance != null && instance instanceof AndroidControllerInterface) {
+            AndroidControllerInterface controller = (AndroidControllerInterface) instance;
+            
+            // First try the traditional direct mappings for backward compatibility
+            switch (direction.toLowerCase()) {
+                case "up": return controller.isUpPressed();
+                case "down": return controller.isDownPressed();
+                case "left": return controller.isLeftPressed();
+                case "right": return controller.isRightPressed();
+                case "action": return controller.isActionPressed();
+                
+                // Enhanced support for additional keys
+                case "enter": 
+                case "start":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.ENTER) ||
+                           controller.isButtonPressed(AndroidControllerConfig.ButtonType.START);
+                           
+                case "space":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.ACTION) ||
+                           controller.isButtonPressed(AndroidControllerConfig.ButtonType.SPACE);
+                           
+                case "escape":
+                case "back":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.ESCAPE) ||
+                           controller.isButtonPressed(AndroidControllerConfig.ButtonType.BACK);
+                           
+                // Support for common action buttons
+                case "jump":
+                case "w":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.JUMP);
+                    
+                case "attack":
+                case "x":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.ATTACK);
+                    
+                case "special":
+                case "z":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.SPECIAL);
+                    
+                // Gamepad style buttons
+                case "a":
+                case "button_a":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.BUTTON_A);
+                    
+                case "b":
+                case "button_b":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.BUTTON_B);
+                    
+                case "y":
+                case "button_y":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.BUTTON_Y);
+                    
+                case "button_x":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.BUTTON_X);
+                    
+                // Shoulder buttons
+                case "q":
+                case "left_shoulder":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.LEFT_SHOULDER);
+                    
+                case "e":
+                case "right_shoulder":
+                    return controller.isButtonPressed(AndroidControllerConfig.ButtonType.RIGHT_SHOULDER);
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Enhanced method to check controller input by button type
+     * This provides direct access to the flexible button system
+     */
+    public static boolean isVirtualButtonPressed(AndroidControllerConfig.ButtonType buttonType) {
+        if (instance != null && instance instanceof AndroidControllerInterface) {
+            AndroidControllerInterface controller = (AndroidControllerInterface) instance;
+            return controller.isButtonPressed(buttonType);
+        }
+        return false;
+    }
+    
+    /**
+     * Show or hide the whole on-screen virtual controller.
+     * Does nothing on platforms without one (e.g. desktop).
+     */
+    public static void setVirtualControllerVisible(boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setControllerVisible(visible);
+        }
+    }
+
+    /**
+     * Show or hide one on-screen button, identified by id ("btn_enter", "enter", ...).
+     */
+    public static void setVirtualButtonVisible(String buttonId, boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setButtonVisible(buttonId, visible);
+        }
+    }
+
+    /**
+     * Show or hide every on-screen button.
+     */
+    public static void setAllVirtualButtonsVisible(boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setAllButtonsVisible(visible);
+        }
+    }
+
+    private static AndroidControllerInterface getController() {
+        if (instance instanceof AndroidControllerInterface) {
+            return (AndroidControllerInterface) instance;
+        }
+        return null;
+    }
+
+    /**
+     * Check if running on Android platform
+     */
+    public static boolean isAndroidPlatform() {
+        return instance != null && instance instanceof AndroidControllerInterface && 
+               ((AndroidControllerInterface) instance).isAndroid();
     }
 }

@@ -16,6 +16,9 @@ allprojects {
   apply plugin: 'eclipse'
   apply plugin: 'idea'
 
+  // Define the project version to avoid configuration errors
+  ext.projectVersion = '1.0.0'
+
   // This allows you to "Build and run using IntelliJ IDEA", an option in IDEA's Settings.
   idea {
     module {

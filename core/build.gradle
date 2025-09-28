@@ -1,6 +1,15 @@
 [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
 eclipse.project.name = appName + '-core'
 
+// Add source sets to include user-project classes
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java/user-project']
+        }
+    }
+}
+
 dependencies {
   api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
@@ -44,4 +53,24 @@ tasks.register('copyGreenfootAssets', Copy) {
 // Make sure assets are copied before any build tasks
 tasks.named('compileJava').configure {
     dependsOn 'copyGreenfootAssets'
+}
+
+// Also ensure the Android tasks depend on our asset copying
+afterEvaluate {
+    // For desktop (lwjgl3)
+    if (project(':lwjgl3') != null) {
+        project(':lwjgl3').tasks.matching { it.name.contains('processResources') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+    }
+    
+    // For Android
+    if (project(':android') != null) {
+        project(':android').tasks.matching { it.name.contains('mergeDebugAssets') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+        project(':android').tasks.matching { it.name.contains('mergeReleaseAssets') }.all {
+            dependsOn ':core:copyGreenfootAssets'
+        }
+    }
 }

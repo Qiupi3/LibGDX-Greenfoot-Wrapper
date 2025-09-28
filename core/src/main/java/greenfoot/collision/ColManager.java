@@ -1,4 +1,26 @@
-package greenfoot;
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
+package greenfoot.collision;
 
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
@@ -8,13 +30,30 @@ import com.badlogic.gdx.utils.ObjectMap;
 import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.Pool;
 
+import greenfoot.Actor;
+import greenfoot.ActorVisitor;
+
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * LibGDX-based collision manager that handles spatial partitioning and collision detection
  * using LibGDX's optimized data structures and math library.
+ * 
+ * This class re-implements greenfoot.collision.platforms.ColManager to provide a LibGDX backend,
+ * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
+ * mobile devices and other platforms).
+ * 
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
+ * 
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @version 1.0
  */
+
 public class ColManager implements CollisionChecker {
     
     // World properties
@@ -145,23 +184,28 @@ public class ColManager implements CollisionChecker {
     public <T extends Actor> List<T> getObjectsAt(int x, int y, Class<T> cls) {
         List<T> result = new ArrayList<T>();
         
-        // Convert world coordinates to pixel coordinates
-        float pixelX = x * cellSize + cellSize / 2f;
-        float pixelY = y * cellSize + cellSize / 2f;
-        
-        // Get grid cell
-        int gridX = (int) (pixelX / gridCellSize);
-        int gridY = (int) (pixelY / gridCellSize);
-        
-        if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
-            Array<Actor> cellActors = spatialGrid[gridX][gridY];
-            
-            for (Actor actor : cellActors) {
-                if (cls.isAssignableFrom(actor.getClass())) {
-                    // Check if actor is actually at this position
-                    if (actor.getX() == x && actor.getY() == y) {
-                        result.add((T) actor);
-                    }
+        // Greenfoot's semantics: an actor is "at" a point when the point falls on the
+        // actor's image, whatever size that image is. The spatial grid is not used
+        // here: an actor's image can be far wider than a grid cell (a 384px wide
+        // button, say), so a neighbourhood scan would miss actors that do contain the
+        // point. The actor list per world is small enough for a linear scan.
+        float targetGreenfootX;
+        float targetGreenfootY;
+        if (cellSize == 1) {
+            targetGreenfootX = x;
+            targetGreenfootY = y;
+        } else {
+            targetGreenfootX = x * cellSize + cellSize / 2f;
+            targetGreenfootY = y * cellSize + cellSize / 2f;
+        }
+
+        for (Actor actor : allActors) {
+            if (!cls.isAssignableFrom(actor.getClass())) {
+                continue;
+            }
+            if (ActorVisitor.containsWorldPixel(actor, targetGreenfootX, targetGreenfootY)) {
+                if (!result.contains(actor)) {  // Avoid duplicates
+                    result.add((T) actor);
                 }
             }
         }
@@ -197,10 +241,10 @@ public class ColManager implements CollisionChecker {
     public <T extends Actor> List<T> getObjectsInRange(int x, int y, int radius, Class<T> cls) {
         List<T> result = new ArrayList<T>();
         
-        // Convert to pixel coordinates
+        // Convert to pixel coordinates with Y-axis inversion to match Actor.getPixelX/Y
         float pixelX = x * cellSize + cellSize / 2f;
-        float pixelY = y * cellSize + cellSize / 2f;
-        float pixelRadius = radius * cellSize;
+        float pixelY = (worldHeight * cellSize) - (y * cellSize + cellSize / 2f); // Apply Y-axis inversion
+        float pixelRadius = radius; // radius is already in pixels, not cells
         
         // Create bounding rectangle for the range
         tempRect1.set(pixelX - pixelRadius, pixelY - pixelRadius, 
@@ -210,7 +254,6 @@ public class ColManager implements CollisionChecker {
         
         for (Actor actor : nearbyActors) {
             if (cls.isAssignableFrom(actor.getClass())) {
-                // Check distance
                 float dx = actor.getPixelX() - pixelX;
                 float dy = actor.getPixelY() - pixelY;
                 float distanceSquared = dx * dx + dy * dy;
@@ -318,13 +361,20 @@ public class ColManager implements CollisionChecker {
     }
 
     @Override
-    public <T extends Actor> T getOneObjectAt(Actor object, int dx, int dy, Class<T> cls) {
+    public <T extends Actor> T getOneObjectAt(Actor object, int targetX, int targetY, Class<T> cls) {
         if (object == null) return null;
+
+        int finalTargetX = targetX;
+        int finalTargetY = targetY;
         
-        int targetX = object.getX() + dx;
-        int targetY = object.getY() + dy;
+        // If cellSize is NOT 1, convert from cell coordinates to pixel coordinates
+        if (cellSize != 1) {
+            finalTargetX = targetX * cellSize;
+            finalTargetY = targetY * cellSize;
+        }
         
-        List<T> actors = getObjectsAt(targetX, targetY, cls);
+        List<T> actors = getObjectsAt(finalTargetX, finalTargetY, cls);
+        
         return actors.isEmpty() ? null : actors.get(0);
     }
 

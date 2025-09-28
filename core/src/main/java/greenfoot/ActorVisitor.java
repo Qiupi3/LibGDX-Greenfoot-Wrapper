@@ -1,15 +1,38 @@
+/*
+ This file is part of the Greenfoot program.
+ Copyright (C) 2005-2009,2010,2011,2013,2014,2015,2016,2021 Poul Henriksen and Michael Kolling
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package greenfoot;
 
 import greenfoot.collision.ibsp.Rect;
 import greenfoot.platforms.ActorDelegate;
 
 /**
- * LibGDX-based ActorVisitor class that provides access to Actor methods that are package protected.
- * This class makes it possible for classes outside the greenfoot package to access Actor methods
- * that are package protected for security/API design reasons.
+ * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
+ * Read the original documentation at
+ * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
+ * 
+ * @author Poul Henriksen (Original Greenfoot version's author)
  */
 public class ActorVisitor {
-    
     /**
      * Set the location of an actor in pixel coordinates (for dragging operations).
      */
@@ -56,6 +79,19 @@ public class ActorVisitor {
      */
     public static boolean containsPoint(Actor actor, int px, int py) {
         return actor.containsPoint(px, py);
+    }
+
+    /**
+     * Whether a point falls on an actor's image. The point is in Greenfoot pixel
+     * coordinates (origin top-left, y downwards).
+     *
+     * @param actor The relevant actor
+     * @param pixelX The x pixel coordinate, Greenfoot space
+     * @param pixelY The y pixel coordinate, Greenfoot space
+     * @return true if the point is on the actor's image; false otherwise
+     */
+    public static boolean containsWorldPixel(Actor actor, float pixelX, float pixelY) {
+        return actor.containsWorldPixel(pixelX, pixelY);
     }
 
     /**
