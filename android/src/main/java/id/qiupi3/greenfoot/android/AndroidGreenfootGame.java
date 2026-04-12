@@ -16,6 +16,9 @@ import id.qiupi3.greenfoot.GreenfootGame;
 
 /**
  * Android-specific version of GreenfootGame with virtual controls.
+ * 
+ * @author Qiupi3
+ * @version 1.0
  */
 public class AndroidGreenfootGame extends GreenfootGame implements AndroidControllerInterface {
     
@@ -73,9 +76,9 @@ public class AndroidGreenfootGame extends GreenfootGame implements AndroidContro
         // - buttonDisplaySize: How big buttons appear on screen (higher = bigger buttons)  
         // - spacingSize: Empty space between buttons (higher = more spread out)
         
-        int buttonTextureSize = 96;  // Increased from 64 for sharper graphics
-        int buttonDisplaySize = 120; // Increased from 80 for bigger buttons
-        int spacingSize = 80;        // Increased from 64 for better spacing
+        int buttonTextureSize = 96;
+        int buttonDisplaySize = 120;
+        int spacingSize = 80;
         
         // Create simple colored rectangles as button textures
         Texture buttonTexture = createButtonTexture(buttonTextureSize, buttonTextureSize, 0.3f, 0.3f, 0.8f, 0.8f); // Semi-transparent blue

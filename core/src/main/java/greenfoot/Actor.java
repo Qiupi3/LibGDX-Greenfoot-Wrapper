@@ -31,11 +31,12 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.MathUtils;
+import greenfoot.platforms.ActorDelegate;
 
 /**
  * Actor class implementation using LibGDX methods.
  * This class represents game objects that can be placed in a World.
- *
+ * 
  * This class re-implements greenfoot.Actor to provide a LibGDX backend,
  * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
  * mobile devices and other platforms).
@@ -91,8 +92,13 @@ public class Actor {
     // Paint sequence tracking
     private int lastPaintSeqNum = 0;
     
+    // Drag visual feedback
+    private boolean isBeingDragged = false;
+    private float dragAlpha = 1.0f;
+    private float originalAlpha = 1.0f;
+    
     // Delegate for platform-specific operations
-    private static greenfoot.platforms.ActorDelegate delegate;
+    private static ActorDelegate delegate;
     
     /**
      * Constructor - creates a new Actor with default settings
@@ -104,7 +110,7 @@ public class Actor {
         bounds = new Rectangle();
         
         // Try to load class-specific image
-        Texture classTexture = getClassTexture();
+        Texture classTexture = getTexture();
         if (classTexture != null) {
             setTexture(classTexture);
         } else {
@@ -319,23 +325,28 @@ public class Actor {
      * Set the texture of this actor.
      */
     public void setTexture(Texture texture) {
-        // Dispose old texture if we created it
-        if (this.texture != null && this.texture != defaultTexture) {
-            this.texture.dispose();
-        }
+        // IMPORTANT: Don't dispose textures here! 
+        // Textures should be managed by GreenfootImage, not by individual actors
+        // Multiple actors might share the same texture, so disposing here causes
+        // the OpenGL "texture unloadable" issue and black sprite rendering
         
         this.texture = texture;
         
         if (texture != null) {
-            if (sprite == null) {
-                sprite = new Sprite(texture);
-            } else {
-                sprite.setTexture(texture);
+            try {
+                if (sprite == null) {
+                    sprite = new Sprite(texture);
+                } else {
+                    sprite.setTexture(texture);
+                }
+                
+                // Update sprite properties
+                sprite.setRotation(rotation);
+                updatePixelPosition();
+            } catch (Exception e) {
+                Gdx.app.log("Actor", "Failed to set sprite texture", e);
+                sprite = null;
             }
-            
-            // Update sprite properties
-            sprite.setRotation(rotation);
-            updatePixelPosition();
         } else {
             sprite = null;
         }
@@ -376,9 +387,50 @@ public class Actor {
     
     /**
      * Get one object at a specific offset from this actor.
+     * Note: dx and dy might be in pixel units (from image calculations) and need conversion to cell units.
      */
     protected Actor getOneObjectAtOffset(int dx, int dy, Class<?> cls) {
         failIfNotInWorld();
+        
+        int finalDx = dx;
+        int finalDy = dy;
+        
+        if (world != null) {
+            int cellSize = world.getCellSize();
+            
+            // When cellSize is NOT 1, we need to convert pixel offsets to cell offsets
+            if (cellSize != 1) {
+                // Normal Greenfoot case: convert pixel offsets to cell offsets
+                if (Math.abs(dx) > cellSize || Math.abs(dy) > cellSize) {
+                    finalDx = (int) Math.round((double) dx / cellSize);
+                    finalDy = (int) Math.round((double) dy / cellSize);
+                    
+                    // Ensure we don't lose the direction for small offsets
+                    if (finalDx == 0 && dx != 0) finalDx = dx > 0 ? 1 : -1;
+                    if (finalDy == 0 && dy != 0) finalDy = dy > 0 ? 1 : -1;
+                }
+            }
+            // When cellSize=1, use offsets directly as pixels (no conversion needed)
+        }
+        
+        // Pass absolute target coordinates to getOneObjectAt
+        return world.getOneObjectAt(this, x + finalDx, y + finalDy, cls);
+    }
+    
+    /**
+     * Get one object at a specific offset from this actor using a fixed range.
+     * This is more reliable than getOneObjectAtOffset for combat systems where
+     * the attack range should be consistent regardless of current animation frame size.
+     * 
+     * @param direction Direction multiplier (-1, 0, or 1) for each axis
+     * @param range Fixed range in pixels for the attack
+     * @param cls Class type to search for
+     * @return First object found within range, or null
+     */
+    protected Actor getOneObjectAtOffsetWithRange(int directionX, int directionY, int range, Class<?> cls) {
+        failIfNotInWorld();
+        int dx = directionX * range;
+        int dy = directionY * range;
         return world.getOneObjectAt(this, x + dx, y + dy, cls);
     }
     
@@ -434,7 +486,76 @@ public class Actor {
      */
     public void render(SpriteBatch batch) {
         if (sprite != null && world != null) {
-            sprite.draw(batch);
+            try {
+                // Ensure texture is valid before drawing
+                if (sprite.getTexture() != null) {
+                    // Check if this actor is being dragged for visual feedback
+                    updateDragVisuals();
+                    
+                    // Apply drag visual effects
+                    if (isBeingDragged) {
+                        // Make dragged object slightly transparent and larger
+                        com.badlogic.gdx.graphics.Color oldColor = batch.getColor();
+                        batch.setColor(oldColor.r, oldColor.g, oldColor.b, dragAlpha);
+                        
+                        // Draw slightly larger for drag effect
+                        float oldScaleX = sprite.getScaleX();
+                        float oldScaleY = sprite.getScaleY();
+                        sprite.setScale(oldScaleX * 1.1f, oldScaleY * 1.1f);
+                        
+                        sprite.draw(batch);
+                        
+                        // Restore original scale and color
+                        sprite.setScale(oldScaleX, oldScaleY);
+                        batch.setColor(oldColor);
+                    } else {
+                        // Normal rendering
+                        sprite.draw(batch);
+                    }
+                }
+            } catch (Exception e) {
+                // Log the error but don't crash the rendering
+                Gdx.app.log("Actor", "Error rendering actor: " + e.getMessage(), e);
+            }
+        }
+    }
+    
+    /**
+     * Update drag visual state based on current drag status.
+     * Modified to avoid interfering with quick mouse clicks for attacks.
+     */
+    private void updateDragVisuals() {
+        // Check if this actor is currently being dragged
+        boolean wasDragged = isBeingDragged;
+        Actor currentDraggedObject = greenfoot.MouseInfo.getDraggedObject();
+        
+        // Only consider this actor as being dragged if:
+        // 1. It's actually the dragged object
+        // 2. And the mouse has been pressed for a reasonable drag duration (avoid quick clicks)
+        boolean actuallyDragging = (currentDraggedObject == this) && greenfoot.MouseInfo.isDragging();
+        
+        isBeingDragged = actuallyDragging;
+        
+        if (isBeingDragged && !wasDragged) {
+            // Just started being dragged
+            originalAlpha = 1.0f;
+            dragAlpha = 0.7f; // Semi-transparent
+        } else if (!isBeingDragged && wasDragged) {
+            // Just stopped being dragged
+            dragAlpha = originalAlpha;
+        }
+    }
+    
+    /**
+     * Set whether this actor is being dragged.
+     */
+    public void setBeingDragged(boolean dragged) {
+        this.isBeingDragged = dragged;
+        if (dragged) {
+            this.originalAlpha = 1.0f;
+            this.dragAlpha = 0.7f; // 70% opacity when dragging
+        } else {
+            this.dragAlpha = this.originalAlpha;
         }
     }
     
@@ -537,61 +658,6 @@ public class Actor {
     }
     
     /**
-     * Try to load a texture specific to this class.
-     */
-    private Texture getClassTexture() {
-        String className = getClass().getSimpleName();
-        
-        // Try to get image from project.greenfoot configuration
-        try {
-            String imageFileName = getImageFromProjectFile(className);
-            if (imageFileName != null) {
-                // Try to load the specified image
-                if (Gdx.files.internal("tes/images/" + imageFileName).exists()) {
-                    return new Texture(Gdx.files.internal("tes/images/" + imageFileName));
-                }
-            }
-        } catch (Exception e) {
-            // Continue to fallback method
-        }
-        
-        // Fallback: try to load image with class name
-        try {
-            String classNameLower = className.toLowerCase();
-            if (Gdx.files.internal("tes/images/" + classNameLower + ".png").exists()) {
-                return new Texture(Gdx.files.internal("tes/images/" + classNameLower + ".png"));
-            }
-        } catch (Exception e) {
-            // Ignore and continue
-        }
-        return null;
-    }
-    
-    /**
-     * Get the image filename for a class from project.greenfoot file.
-     */
-    private String getImageFromProjectFile(String className) {
-        try {
-            // Use LibGDX internal file system (works on all platforms including Android)
-            com.badlogic.gdx.files.FileHandle projectFile = com.badlogic.gdx.Gdx.files.internal("tes/project.greenfoot");
-            if (projectFile.exists()) {
-                String content = projectFile.readString();
-                String[] lines = content.split("\n");
-                String searchPattern = "class." + className + ".image=";
-                
-                for (String line : lines) {
-                    if (line.startsWith(searchPattern)) {
-                        return line.substring(searchPattern.length()).trim();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Ignore and return null
-        }
-        return null;
-    }
-    
-    /**
      * Set the default texture for all actors.
      */
     public static void setDefaultTexture(Texture texture) {
@@ -607,15 +673,44 @@ public class Actor {
     
     /**
      * Set location in pixel coordinates (for dragging operations).
+     * Note: Expects pixel coordinates in Greenfoot coordinate system (Y increases downward).
      */
     protected void setLocationInPixels(int x, int y) {
         if (world != null) {
             int cellSize = world.getCellSize();
             int cellX = x / cellSize;
             int cellY = y / cellSize;
-            setLocation(cellX, cellY);
+            
+            // Update cell coordinates directly (bypass setLocation to avoid updatePixelPosition override)
+            int oldX = this.x;
+            int oldY = this.y;
+            
+            // Apply world bounds if bounded
+            if (world.isBounded()) {
+                this.x = MathUtils.clamp(cellX, 0, world.getWidth() - 1);
+                this.y = MathUtils.clamp(cellY, 0, world.getHeight() - 1);
+            } else {
+                this.x = cellX;
+                this.y = cellY;
+            }
+            
+            // Store LibGDX coordinates in position field for rendering (with Y-flip)
+            float libgdxPixelX = x;
+            float libgdxPixelY = world.getHeightInPixels() - y;
+            position.set(libgdxPixelX, libgdxPixelY);
+            
+            // Update sprite position
+            if (sprite != null) {
+                sprite.setCenter(position.x, position.y);
+            }
+            
+            // Notify world of location change if needed
+            if (this.x != oldX || this.y != oldY) {
+                locationChanged(oldX, oldY);
+            }
+        } else {
+            position.set(x, y);
         }
-        position.set(x, y);
         updateBounds();
     }
     

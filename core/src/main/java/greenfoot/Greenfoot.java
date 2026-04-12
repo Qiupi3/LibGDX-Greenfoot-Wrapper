@@ -28,6 +28,7 @@ import java.util.Random;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
 import com.badlogic.gdx.audio.Sound;
+import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.StringBuilder;
 import id.qiupi3.greenfoot.GreenfootGame;
 
@@ -54,6 +55,16 @@ public class Greenfoot {
     private static int speed = 50;
     private static boolean isPaused = false;
     
+    // Frame timing control for drag & drop performance
+    private static int targetFPS = 30; // Default 30 FPS for better drag interaction
+    private static boolean dragSlowMode = true; // Slow down during drag operations
+    
+    // Frame-based mouse button tracking
+    private static boolean wasLeftButtonPressed = false;
+    private static boolean wasRightButtonPressed = false;
+    private static boolean wasMiddleButtonPressed = false;
+    private static boolean wasAnyButtonPressed = false;
+
     // Text input management for ask() method
     private static boolean isWaitingForInput = false;
     private static String inputPrompt = "";
@@ -149,6 +160,44 @@ public class Greenfoot {
     }
     
     /**
+     * Get current target FPS setting.
+     * 
+     * @return Current target frames per second
+     */
+    public static int getTargetFPS() {
+        return targetFPS;
+    }
+    
+    /**
+     * Set target FPS for the application.
+     * Lower FPS provides better timing for drag & drop operations.
+     * 
+     * @param fps Target frames per second (recommended: 30 for drag operations, 60 for normal gameplay)
+     */
+    public static void setTargetFPS(int fps) {
+        targetFPS = Math.max(10, Math.min(fps, 120)); // Clamp between 10-120 FPS
+    }
+    
+    /**
+     * Check if drag slow mode is enabled.
+     * 
+     * @return true if drag operations use slower timing for better precision
+     */
+    public static boolean isDragSlowMode() {
+        return dragSlowMode;
+    }
+    
+    /**
+     * Enable or disable drag slow mode.
+     * When enabled, frame rate is reduced during drag operations for better precision.
+     * 
+     * @param enabled true to enable drag slow mode
+     */
+    public static void setDragSlowMode(boolean enabled) {
+        dragSlowMode = enabled;
+    }
+    
+    /**
      * Return a random number between 0 (inclusive) and limit (exclusive).
      * 
      * @param limit  An upper limit which the returned random number will be smaller than.
@@ -187,16 +236,16 @@ public class Greenfoot {
      *             false otherwise.
      */
     public static boolean mousePressed(Object obj) {
-        // First check if any mouse button is pressed
-        boolean anyButtonPressed = Gdx.input.isButtonPressed(Input.Buttons.LEFT) ||
-                                  Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
-                                  Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
+        // Check if any mouse button was just pressed this frame
+        boolean justPressed = isAnyButtonJustPressed();
         
-        if (!anyButtonPressed) {
+        if (!justPressed) {
             return false;
         }
         
-        return isMouseOnObject(obj);
+        boolean result = isMouseOnObject(obj);
+        
+        return result;
     }
 
     /**
@@ -252,12 +301,8 @@ public class Greenfoot {
      * @return     True if a mouse drag has ended on the given object, false otherwise.
      */
     public static boolean mouseDragEnded(Object obj) {
-        // Check if no mouse buttons are pressed (drag ended)
-        boolean noDragInProgress = !Gdx.input.isButtonPressed(Input.Buttons.LEFT) &&
-                                  !Gdx.input.isButtonPressed(Input.Buttons.RIGHT) &&
-                                  !Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
-        
-        if (!noDragInProgress) {
+        // Check if any mouse button was just released this frame
+        if (!isAnyButtonJustReleased()) {
             return false;
         }
         
@@ -284,8 +329,14 @@ public class Greenfoot {
         return isMouseOnObject(obj);
     }
 
+    // Mouse state caching for performance optimization
+    private static MouseInfo cachedMouseInfo = null;
+    private static long lastMouseInfoUpdate = 0;
+    private static final long MOUSE_INFO_CACHE_TIME = 16666666L; // ~60 FPS (16.67ms in nanoseconds)
+    
     /**
      * Return a mouse info object with information about the state of the mouse.
+     * Performance optimized: caches results and reduces coordinate calculation frequency during drag.
      * 
      * @return A mouse info object if the mouse has been clicked, pressed, moved, etc.
      *         null, otherwise.
@@ -298,7 +349,15 @@ public class Greenfoot {
         
         boolean hasActivity = Gdx.input.justTouched() || anyButtonPressed || mouseMoved(null);
         
-        if (hasActivity) {
+        if (hasActivity || anyButtonPressed) {
+            long currentTime = System.nanoTime();
+            
+            // Use cached result if we're in drag slow mode and recent update exists
+            if (dragSlowMode && cachedMouseInfo != null && 
+                (currentTime - lastMouseInfoUpdate) < MOUSE_INFO_CACHE_TIME) {
+                return cachedMouseInfo;
+            }
+            
             MouseInfo info = new MouseInfo();
             
             // Get current mouse position and convert to world coordinates
@@ -307,12 +366,20 @@ public class Greenfoot {
             
             World currentWorld = WorldHandler.getInstance().getWorld();
             if (currentWorld != null) {
-                // Convert to world cell coordinates
-                int cellX = screenX / currentWorld.getCellSize();
-                int cellY = (Gdx.graphics.getHeight() - screenY) / currentWorld.getCellSize();
+                // Convert screen coordinates to world coordinates using camera unproject
+                Vector3 worldCoords = new Vector3(screenX, screenY, 0);
+                currentWorld.getCamera().unproject(worldCoords);
                 
-                // Set coordinates using MouseInfoVisitor
-                MouseInfoVisitor.setLoc(info, cellX, cellY, screenX, Gdx.graphics.getHeight() - screenY);
+                // Convert to world cell coordinates using consistent method
+                int cellX = (int)(worldCoords.x / currentWorld.getCellSize());
+                int cellY = (int)((currentWorld.getHeightInPixels() - worldCoords.y) / currentWorld.getCellSize());
+                
+                // Calculate pixel coordinates in world space (for drag positioning)
+                int worldPixelX = (int)worldCoords.x;
+                int worldPixelY = (int)(currentWorld.getHeightInPixels() - worldCoords.y);
+                
+                // Set coordinates using MouseInfoVisitor (cell coordinates and world pixel coordinates)
+                MouseInfoVisitor.setLoc(info, cellX, cellY, worldPixelX, worldPixelY);
                 
                 // Set button information
                 int button = 0;
@@ -326,22 +393,37 @@ public class Greenfoot {
                 MouseInfoVisitor.setButton(info, button);
                 MouseInfoVisitor.setClickCount(info, button != 0 ? 1 : 0);
                 
-                // Detect actor at mouse position
-                List<Actor> actorsAtPosition = currentWorld.getObjectsAt(cellX, cellY, Actor.class);
-                if (!actorsAtPosition.isEmpty()) {
-                    // Get the topmost actor (last in the list, as it was added most recently)
-                    Actor topActor = actorsAtPosition.get(actorsAtPosition.size() - 1);
-                    MouseInfoVisitor.setActor(info, topActor);
+                // Only detect actor when not dragging or on button press for performance
+                if (!isDragging() || Gdx.input.justTouched()) {
+                    List<Actor> actorsAtPosition = currentWorld.getObjectsAt(cellX, cellY, Actor.class);
+                    if (!actorsAtPosition.isEmpty()) {
+                        // Get the topmost actor (last in the list, as it was added most recently)
+                        Actor topActor = actorsAtPosition.get(actorsAtPosition.size() - 1);
+                        MouseInfoVisitor.setActor(info, topActor);
+                    } else {
+                        MouseInfoVisitor.setActor(info, null);
+                    }
                 } else {
+                    // Don't set actor during drag for performance
                     MouseInfoVisitor.setActor(info, null);
                 }
             }
+            
+            // Cache the result
+            cachedMouseInfo = info;
+            lastMouseInfoUpdate = currentTime;
             
             return info;
         }
         return null;
     }
-
+    
+    /**
+     * Check if currently dragging for performance optimization.
+     */
+    private static boolean isDragging() {
+        return WorldHandler.getInstance().isDragging();
+    }
     /**
      * Get the current microphone level (volume). This can be used to react to
      * the sound level of the default microphone device.
@@ -432,6 +514,59 @@ public class Greenfoot {
         }
     }
     
+    /**
+     * Update mouse state tracking - should be called once per frame.
+     * This tracks button state changes for proper just-pressed/just-released detection.
+     */
+    public static void updateMouseState() {
+        boolean currentLeft = Gdx.input.isButtonPressed(Input.Buttons.LEFT);
+        boolean currentRight = Gdx.input.isButtonPressed(Input.Buttons.RIGHT);
+        boolean currentMiddle = Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
+        boolean currentAny = currentLeft || currentRight || currentMiddle;
+        
+        wasLeftButtonPressed = currentLeft;
+        wasRightButtonPressed = currentRight;
+        wasMiddleButtonPressed = currentMiddle;
+        wasAnyButtonPressed = currentAny;
+    }
+    
+    /**
+     * Check if left mouse button was just pressed this frame.
+     */
+    public static boolean isLeftButtonJustPressed() {
+        boolean currentLeft = Gdx.input.isButtonPressed(Input.Buttons.LEFT);
+        return currentLeft && !wasLeftButtonPressed;
+    }
+    
+    /**
+     * Check if left mouse button was just released this frame.
+     */
+    public static boolean isLeftButtonJustReleased() {
+        boolean currentLeft = Gdx.input.isButtonPressed(Input.Buttons.LEFT);
+        return !currentLeft && wasLeftButtonPressed;
+    }
+    
+    /**
+     * Check if any mouse button was just pressed this frame.
+     */
+    public static boolean isAnyButtonJustPressed() {
+        boolean currentAny = Gdx.input.isButtonPressed(Input.Buttons.LEFT) ||
+                           Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
+                           Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
+        boolean result = currentAny && !wasAnyButtonPressed;
+        return result;
+    }
+    
+    /**
+     * Check if any mouse button was just released this frame.
+     */
+    public static boolean isAnyButtonJustReleased() {
+        boolean currentAny = Gdx.input.isButtonPressed(Input.Buttons.LEFT) ||
+                           Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
+                           Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
+        return !currentAny && wasAnyButtonPressed;
+    }
+    
     // ================ LibGDX Helper Methods ================
     
     /**
@@ -440,7 +575,7 @@ public class Greenfoot {
      * @param obj The object to check (Actor, World, or null for anywhere)
      * @return true if mouse is over the object, false otherwise
      */
-    private static boolean isMouseOnObject(Object obj) {
+    private static boolean isMouseOnObject(Object obj) {        
         // If obj is null, mouse action is valid anywhere
         if (obj == null) {
             return true;
@@ -450,36 +585,71 @@ public class Greenfoot {
         int mouseX = Gdx.input.getX();
         int mouseY = Gdx.input.getY();
         
-        // Convert to world coordinates (flip Y axis for LibGDX)
         World currentWorld = WorldHandler.getInstance().getWorld();
         if (currentWorld == null) {
+            // For Actor objects, we can try an alternative approach without the world
+            if (obj instanceof Actor) {
+                Actor actor = (Actor) obj;
+                
+                try {
+                    float actorX = actor.getX();
+                    float actorY = actor.getY();
+                    
+                    float cellSize = 50f;
+                    float screenActorX = actorX * cellSize;
+                    float screenActorY = actorY * cellSize;
+                    
+                    // Simple bounding box check (rough approximation)
+                    boolean collision = Math.abs(mouseX - screenActorX) < cellSize/2 && 
+                                       Math.abs(mouseY - screenActorY) < cellSize/2;
+                    
+                    return collision;
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+            
+            // For non-Actor objects when world is null, return false
             return false;
         }
         
-        // Convert screen coordinates to world coordinates
-        float worldX = mouseX;
-        float worldY = Gdx.graphics.getHeight() - mouseY; // Flip Y coordinate
+        // Convert screen coordinates to world coordinates using camera
+        com.badlogic.gdx.math.Vector3 worldCoords = new com.badlogic.gdx.math.Vector3(mouseX, mouseY, 0);
+        currentWorld.getCamera().unproject(worldCoords);
+        float worldX = worldCoords.x;
+        float worldY = worldCoords.y;
+        
+        float correctedWorldY = currentWorld.getHeightInPixels() - worldY;
         
         if (obj instanceof Actor) {
             Actor actor = (Actor) obj;
             
-            // Check if mouse is within actor's bounds
-            float actorX = actor.getX() * currentWorld.getCellSize();
-            float actorY = actor.getY() * currentWorld.getCellSize();
-            float actorWidth = currentWorld.getCellSize(); // Assume 1 cell width
-            float actorHeight = currentWorld.getCellSize(); // Assume 1 cell height
+            float actorX = actor.getX();
+            float actorY = actor.getY();
             
-            return worldX >= actorX && worldX <= actorX + actorWidth &&
-                   worldY >= actorY && worldY <= actorY + actorHeight;
+            //TODO: try lower value
+            float actorWidth = 80f;
+            float actorHeight = 80f;
+            
+            // Center the collision box around the actor position
+            float boxLeft = actorX - actorWidth/2;
+            float boxRight = actorX + actorWidth/2;
+            float boxBottom = actorY - actorHeight/2;
+            float boxTop = actorY + actorHeight/2;
+            
+            boolean collision = worldX >= boxLeft && worldX <= boxRight &&
+                               correctedWorldY >= boxBottom && correctedWorldY <= boxTop;
+            
+            return collision;
             
         } else if (obj instanceof World) {
             // Mouse is on world background if it's within world bounds
             World world = (World) obj;
-            float worldWidth = world.getWidth() * world.getCellSize();
-            float worldHeight = world.getHeight() * world.getCellSize();
+            float worldWidth = world.getWidthInPixels();
+            float worldHeight = world.getHeightInPixels();
             
             return worldX >= 0 && worldX <= worldWidth &&
-                   worldY >= 0 && worldY <= worldHeight;
+                   correctedWorldY >= 0 && correctedWorldY <= worldHeight;
         }
         
         // Unknown object type, return false
@@ -840,7 +1010,8 @@ public class Greenfoot {
             
             // Special keys
             case "space":
-                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE);
+                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE) ||
+                           Gdx.input.isButtonPressed(Input.Buttons.LEFT); // Left mouse button acts as space
                 break;
             case "enter":
                 keyPressed = Gdx.input.isKeyPressed(Input.Keys.ENTER);
@@ -879,15 +1050,21 @@ public class Greenfoot {
         // This allows existing Greenfoot.isKeyDown() calls to work with virtual controller!
         switch (key) {
             case "up":
+            case "w":
                 return GreenfootGame.isVirtualControllerPressed("up");
             case "down":
+            case "s":
                 return GreenfootGame.isVirtualControllerPressed("down");
             case "left":
+            case "a":
                 return GreenfootGame.isVirtualControllerPressed("left");
             case "right":
+            case "d":
                 return GreenfootGame.isVirtualControllerPressed("right");
             case "space":
                 return GreenfootGame.isVirtualControllerPressed("action"); // Map space bar to action button
+            case "enter":
+                return GreenfootGame.isVirtualControllerPressed("enter"); // Map enter to enter button
             default:
                 return false;
         }
@@ -1105,5 +1282,13 @@ public class Greenfoot {
             // If rendering fails, fall back to console logging only
             Gdx.app.log("Greenfoot", "Prompt: " + inputPrompt + " | Input: " + currentInput.toString());
         }
+    }
+
+    public static boolean wasRightButtonPressed() {
+        return wasRightButtonPressed;
+    }
+
+    public static boolean wasMiddleButtonPressed() {
+        return wasMiddleButtonPressed;
     }
 }

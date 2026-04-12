@@ -72,9 +72,23 @@ public class GreenfootSound {
      */
     private void loadSound(String filename) {
         try {
-            FileHandle file = Gdx.files.internal("sounds/" + filename);
-            if (!file.exists()) {
-                file = Gdx.files.internal(filename);
+            FileHandle file = null;
+            
+            // Use dynamic path resolution for sounds
+            String[] soundPaths = {
+                "sounds/" + filename,                                                    // Standard Greenfoot path
+                filename,                                                               // Direct path
+                id.qiupi3.greenfoot.GreenfootProjectConfig.getSoundsPath(filename),   // Dynamic project sounds path
+                id.qiupi3.greenfoot.GreenfootProjectConfig.getAssetPath(filename)     // Dynamic project root path
+            };
+            
+            for (String path : soundPaths) {
+                FileHandle testFile = Gdx.files.internal(path);
+                if (testFile.exists()) {
+                    file = testFile;
+                    System.out.println("Found sound at: " + path);
+                    break;
+                }
             }
             
             if (file != null && file.exists()) {

@@ -156,6 +156,7 @@ Thumbs.db
 /assets/assets.txt
 .vscode/
 core/src/main/java/user-project/**/*
+assets/**/*
 
 ## Special cases:
 

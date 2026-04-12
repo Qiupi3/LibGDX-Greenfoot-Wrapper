@@ -1,6 +1,15 @@
 [compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
 eclipse.project.name = appName + '-core'
 
+// Add source sets to include user-project classes
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'src/main/java/user-project']
+        }
+    }
+}
+
 dependencies {
   api "com.badlogicgames.gdx:gdx-freetype:$gdxVersion"
   api "com.badlogicgames.gdx:gdx:$gdxVersion"

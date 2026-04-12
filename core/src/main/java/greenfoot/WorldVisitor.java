@@ -70,9 +70,10 @@ public class WorldVisitor {
     }
     
     public static Collection<Actor> getObjectsAtPixel(World w, int x, int y) {
-        // Convert pixel coordinates to cell coordinates
+        // Convert pixel coordinates to cell coordinates with Y-axis flip
         int cellX = toCellFloor(w, x);
-        int cellY = toCellFloor(w, y);
+        // Apply Y-axis flip for pixel to cell conversion
+        int cellY = toCellFloor(w, w.getHeightInPixels() - y);
         
         // Check if coordinates are within bounds
         if (cellX < 0 || cellX >= w.width || cellY < 0 || cellY >= w.height) {

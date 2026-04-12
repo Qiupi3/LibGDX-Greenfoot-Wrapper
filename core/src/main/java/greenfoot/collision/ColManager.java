@@ -183,22 +183,47 @@ public class ColManager implements CollisionChecker {
     public <T extends Actor> List<T> getObjectsAt(int x, int y, Class<T> cls) {
         List<T> result = new ArrayList<T>();
         
-        // Convert world coordinates to pixel coordinates
-        float pixelX = x * cellSize + cellSize / 2f;
-        float pixelY = y * cellSize + cellSize / 2f;
+        float targetPixelX, targetPixelY;
         
-        // Get grid cell
-        int gridX = (int) (pixelX / gridCellSize);
-        int gridY = (int) (pixelY / gridCellSize);
+        if (cellSize == 1) {
+            // When cellSize=1, x,y are Greenfoot pixel coordinates (Y-down from top)
+            // Convert to LibGDX pixel coordinates (Y-up from bottom) for distance calculation
+            targetPixelX = x;
+            targetPixelY = (worldHeight * cellSize) - y;  // Y-flip: Greenfoot to LibGDX
+        } else {
+            // Normal case: Convert Greenfoot cell coordinates to LibGDX pixel coordinates with Y-axis inversion
+            targetPixelX = x * cellSize + cellSize / 2f;
+            targetPixelY = (worldHeight * cellSize) - (y * cellSize + cellSize / 2f);
+        }
         
-        if (gridX >= 0 && gridX < gridWidth && gridY >= 0 && gridY < gridHeight) {
-            Array<Actor> cellActors = spatialGrid[gridX][gridY];
-            
-            for (Actor actor : cellActors) {
-                if (cls.isAssignableFrom(actor.getClass())) {
-                    // Check if actor is actually at this position
-                    if (actor.getX() == x && actor.getY() == y) {
-                        result.add((T) actor);
+        // Get grid cell for spatial optimization
+        int gridX = (int) (targetPixelX / gridCellSize);
+        int gridY = (int) (targetPixelY / gridCellSize);
+        
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                int checkGridX = gridX + dx;
+                int checkGridY = gridY + dy;
+                
+                if (checkGridX >= 0 && checkGridX < gridWidth && checkGridY >= 0 && checkGridY < gridHeight) {
+                    Array<Actor> cellActors = spatialGrid[checkGridX][checkGridY];
+                    
+                    for (Actor actor : cellActors) {
+                        
+                        if (cls.isAssignableFrom(actor.getClass())) {
+                            float baseTolerance = Math.max(cellSize, 15); // Base tolerance
+                            float combatTolerance = Math.max(baseTolerance, 40); // Enhanced for combat
+                            //TODO: try lower combatTolerance value
+                            float dxDist = actor.getPixelX() - targetPixelX;
+                            float dyDist = actor.getPixelY() - targetPixelY;
+                            float distance = (float) Math.sqrt(dxDist * dxDist + dyDist * dyDist);
+                            
+                            if (distance <= combatTolerance) {
+                                if (!result.contains(actor)) {  // Avoid duplicates
+                                    result.add((T) actor);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -235,10 +260,10 @@ public class ColManager implements CollisionChecker {
     public <T extends Actor> List<T> getObjectsInRange(int x, int y, int radius, Class<T> cls) {
         List<T> result = new ArrayList<T>();
         
-        // Convert to pixel coordinates
+        // Convert to pixel coordinates with Y-axis inversion to match Actor.getPixelX/Y
         float pixelX = x * cellSize + cellSize / 2f;
-        float pixelY = y * cellSize + cellSize / 2f;
-        float pixelRadius = radius * cellSize;
+        float pixelY = (worldHeight * cellSize) - (y * cellSize + cellSize / 2f); // Apply Y-axis inversion
+        float pixelRadius = radius; // radius is already in pixels, not cells
         
         // Create bounding rectangle for the range
         tempRect1.set(pixelX - pixelRadius, pixelY - pixelRadius, 
@@ -248,7 +273,6 @@ public class ColManager implements CollisionChecker {
         
         for (Actor actor : nearbyActors) {
             if (cls.isAssignableFrom(actor.getClass())) {
-                // Check distance
                 float dx = actor.getPixelX() - pixelX;
                 float dy = actor.getPixelY() - pixelY;
                 float distanceSquared = dx * dx + dy * dy;
@@ -356,13 +380,20 @@ public class ColManager implements CollisionChecker {
     }
 
     @Override
-    public <T extends Actor> T getOneObjectAt(Actor object, int dx, int dy, Class<T> cls) {
+    public <T extends Actor> T getOneObjectAt(Actor object, int targetX, int targetY, Class<T> cls) {
         if (object == null) return null;
+
+        int finalTargetX = targetX;
+        int finalTargetY = targetY;
         
-        int targetX = object.getX() + dx;
-        int targetY = object.getY() + dy;
+        // If cellSize is NOT 1, convert from cell coordinates to pixel coordinates
+        if (cellSize != 1) {
+            finalTargetX = targetX * cellSize;
+            finalTargetY = targetY * cellSize;
+        }
         
-        List<T> actors = getObjectsAt(targetX, targetY, cls);
+        List<T> actors = getObjectsAt(finalTargetX, finalTargetY, cls);
+        
         return actors.isEmpty() ? null : actors.get(0);
     }
 

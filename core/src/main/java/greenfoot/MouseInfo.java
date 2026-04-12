@@ -54,6 +54,10 @@ public class MouseInfo {
     private int px;
     private int py;
     private int clickCount;
+    
+    // Static drag state management
+    private static Actor draggedObject = null;
+    private static boolean isDragging = false;
 
     /**
      * Do not create your own MouseInfo objects. Use
@@ -134,24 +138,34 @@ public class MouseInfo {
     
     /**
      * Update this MouseInfo with current LibGDX mouse state.
-     * This method integrates with LibGDX input system.
+     * This method integrates with LibGDX input system and uses consistent coordinate conversion.
      */
     void updateFromLibGDX() {
         int mouseX = Gdx.input.getX();
         int mouseY = Gdx.input.getY();
         
-        // Convert LibGDX screen coordinates to Greenfoot coordinates
-        // LibGDX uses top-left origin, might need coordinate conversion
-        int convertedY = Gdx.graphics.getHeight() - mouseY;
+        // Get current world for proper coordinate conversion
+        World currentWorld = WorldHandler.getInstance().getWorld();
         
-        // Set pixel coordinates
-        this.px = mouseX;
-        this.py = convertedY;
-        
-        // For now, assume 1:1 mapping between pixels and world coordinates
-        // This might need to be adjusted based on cell size
-        this.x = mouseX;
-        this.y = convertedY;
+        if (currentWorld != null) {
+            // Convert screen coordinates to world coordinates using camera unproject (same as other systems)
+            com.badlogic.gdx.math.Vector3 worldCoords = new com.badlogic.gdx.math.Vector3(mouseX, mouseY, 0);
+            currentWorld.getCamera().unproject(worldCoords);
+            
+            // Set pixel coordinates (world space)
+            this.px = (int) worldCoords.x;
+            this.py = (int) (currentWorld.getHeightInPixels() - worldCoords.y);
+            
+            // Convert to cell coordinates using consistent method
+            this.x = (int) (worldCoords.x / currentWorld.getCellSize());
+            this.y = (int) ((currentWorld.getHeightInPixels() - worldCoords.y) / currentWorld.getCellSize());
+        } else {
+            // Fallback: Convert LibGDX screen coordinates directly
+            this.px = mouseX;
+            this.py = Gdx.graphics.getHeight() - mouseY;
+            this.x = mouseX;
+            this.y = Gdx.graphics.getHeight() - mouseY;
+        }
         
         // Determine current button state using LibGDX
         if (Gdx.input.isButtonPressed(Input.Buttons.LEFT)) {
@@ -201,5 +215,19 @@ public class MouseInfo {
     
     public String toString() {
         return "MouseInfo. Actor: " + actor + "  Location: (" + x + "," + y + ")  Button: " + button + " Click Count: " + clickCount;
+    }
+    
+    // Drag functionality
+    public static Actor getDraggedObject() {
+        return draggedObject;
+    }
+    
+    public static boolean isDragging() {
+        return isDragging;
+    }
+    
+    public static void setDraggedObject(Actor actor) {
+        draggedObject = actor;
+        isDragging = actor != null;
     }
 }

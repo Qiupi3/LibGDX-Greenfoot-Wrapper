@@ -160,12 +160,10 @@ public class GreenfootImage {
         // Create pixmap with same dimensions as texture
         pixmap = new Pixmap(texture.getWidth(), texture.getHeight(), Pixmap.Format.RGBA8888);
         
-        // For now, create empty pixmap - in a full implementation we'd copy texture data
-        // This allows the GreenfootImage to be used for drawing operations
         pixmap.setColor(1, 1, 1, 1);
         pixmap.fill();
         
-        copyOnWrite = true; // Mark as copy-on-write to defer expensive operations
+        copyOnWrite = true;
     }
     
     GreenfootImage() { }
@@ -514,15 +512,42 @@ public class GreenfootImage {
         imageFileName = filename;
         
         try {
-            FileHandle fileHandle = Gdx.files.internal("images/" + filename);
-            if (!fileHandle.exists()) {
-                fileHandle = Gdx.files.internal(filename);
+            FileHandle fileHandle = null;
+            
+            // Use dynamic path resolution from GreenfootProjectConfig
+            String[] pathsToTry = id.qiupi3.greenfoot.GreenfootProjectConfig.getAllPossiblePaths(filename);
+            
+            for (String path : pathsToTry) {
+                fileHandle = Gdx.files.internal(path);
+                if (fileHandle.exists()) {
+                    break;
+                }
             }
             
-            if (fileHandle.exists()) {
-                pixmap = new Pixmap(fileHandle);
+            if (fileHandle != null && fileHandle.exists()) {
+                Pixmap loadedPixmap = new Pixmap(fileHandle);
+                
+                // Ensure consistent format (RGBA8888) for all loaded images
+                if (loadedPixmap.getFormat() != Pixmap.Format.RGBA8888) {
+                    pixmap = new Pixmap(loadedPixmap.getWidth(), loadedPixmap.getHeight(), Pixmap.Format.RGBA8888);
+                    pixmap.drawPixmap(loadedPixmap, 0, 0);
+                    loadedPixmap.dispose();
+                } else {
+                    pixmap = loadedPixmap;
+                }
+                
+                // Ensure any existing texture is invalidated
+                invalidateTexture();
             } else {
-                throw new IllegalArgumentException("Could not find image file: " + filename);
+                // Create a detailed error message showing all attempted paths
+                StringBuilder pathList = new StringBuilder();
+                for (int i = 0; i < pathsToTry.length; i++) {
+                    if (i > 0) pathList.append(", ");
+                    pathList.append(pathsToTry[i]);
+                }
+                
+                throw new IllegalArgumentException("Could not find image file: " + filename + 
+                    " (tried paths: " + pathList.toString() + ")");
             }
         }
         catch (Exception e) {
@@ -535,10 +560,14 @@ public class GreenfootImage {
             throw new IllegalArgumentException("Width and height must be positive");
         }
         
+        // Always use RGBA8888 format for consistency
         pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0, 0, 0, 0);
+        pixmap.setColor(0, 0, 0, 0); // Transparent background
         pixmap.fill();
         copyOnWrite = false;
+        
+        // Ensure any existing texture is invalidated
+        invalidateTexture();
     }
 
     private static void copyStates(GreenfootImage src, GreenfootImage dst) {
@@ -548,9 +577,49 @@ public class GreenfootImage {
         dst.transparency = src.transparency;
     }
     
+    private boolean textureNeedsUpdate = false; // Flag to track if texture needs to be regenerated
+    
     public Texture getTexture() {
-        if (texture == null && pixmap != null) {
-            texture = new Texture(pixmap);
+        if (texture == null || textureNeedsUpdate) {
+            if (pixmap != null) {
+                try {
+                    // Dispose old texture if it exists
+                    if (texture != null) {
+                        texture.dispose();
+                    }
+                    
+                    // Ensure pixmap is in correct format before creating texture
+                    if (pixmap.getFormat() != Pixmap.Format.RGBA8888) {
+                        // Convert to RGBA8888 if needed
+                        Pixmap convertedPixmap = new Pixmap(pixmap.getWidth(), pixmap.getHeight(), Pixmap.Format.RGBA8888);
+                        convertedPixmap.drawPixmap(pixmap, 0, 0);
+                        texture = new Texture(convertedPixmap);
+                        convertedPixmap.dispose();
+                    } else {
+                        texture = new Texture(pixmap);
+                    }
+                    
+                    // Set texture filtering to prevent sampling issues
+                    if (texture != null) {
+                        texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+                        // Ensure texture wrapping is set properly to avoid sampling issues
+                        texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+                    }
+                    
+                    textureNeedsUpdate = false; // Reset the flag
+                } catch (Exception e) {
+                    System.err.println("Failed to create texture from pixmap: " + e.getMessage());
+                    // Create a fallback 1x1 white texture to prevent crashes
+                    Pixmap fallbackPixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+                    fallbackPixmap.setColor(1, 1, 1, 1);
+                    fallbackPixmap.fill();
+                    texture = new Texture(fallbackPixmap);
+                    texture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+                    texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge);
+                    fallbackPixmap.dispose();
+                    textureNeedsUpdate = false;
+                }
+            }
         }
         return texture;
     }
@@ -603,6 +672,7 @@ public class GreenfootImage {
             pixmap.dispose();
             pixmap = null;
         }
+        textureNeedsUpdate = false;
     }
     
     private void ensureWritableImage() {
@@ -612,17 +682,14 @@ public class GreenfootImage {
             pixmap = newPixmap;
             copyOnWrite = false;
             
-            if (texture != null) {
-                texture.dispose();
-                texture = null;
-            }
+            // Mark texture for update instead of immediate disposal
+            textureNeedsUpdate = true;
         }
     }
 
     private void invalidateTexture() {
-        if (texture != null) {
-            texture.dispose();
-            texture = null;
-        }
+        // Instead of immediately disposing, just mark texture as needing update
+        // This prevents excessive dispose-recreate cycles
+        textureNeedsUpdate = true;
     }
 }

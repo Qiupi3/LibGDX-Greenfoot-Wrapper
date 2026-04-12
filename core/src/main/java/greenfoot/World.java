@@ -66,7 +66,6 @@ import com.badlogic.gdx.utils.Array;
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
  * @version 1.0
  */
-
 public abstract class World implements Screen {
     // Default background color (white)
     private static final greenfoot.Color DEFAULT_BACKGROUND_COLOR = greenfoot.Color.WHITE;
@@ -242,19 +241,16 @@ public abstract class World implements Screen {
             }
             
             // Update texture for rendering
-            if (backgroundTexture != null) {
-                backgroundTexture.dispose();
-            }
+            // Don't dispose the texture here - it's managed by GreenfootImage
+            // Multiple worlds/actors might share the same texture
             backgroundTexture = backgroundImage.getTexture();
             hasBackgroundTexture = true;
         }
         else {
             backgroundIsClassImage = false;
             backgroundImage = null;
-            if (backgroundTexture != null) {
-                backgroundTexture.dispose();
-                backgroundTexture = null;
-            }
+            // Don't dispose the texture here - it's managed by GreenfootImage
+            backgroundTexture = null;
             hasBackgroundTexture = false;
         }
     }
@@ -331,6 +327,13 @@ public abstract class World implements Screen {
      */
     public boolean isBounded() {
         return bounded;
+    }
+    
+    /**
+     * Get the camera for coordinate transformations.
+     */
+    public OrthographicCamera getCamera() {
+        return camera;
     }
     
     /**
@@ -595,6 +598,13 @@ public abstract class World implements Screen {
         // Set batch to use camera's combined matrix for proper scaling
         batch.setProjectionMatrix(camera.combined);
         
+        // Update mouse state for drag & drop functionality
+        // This ensures the drag state is updated every frame
+        // Only call getMouseInfo if this world is properly set in WorldHandler to avoid circular dependency
+        if (WorldHandler.getInstance().getWorld() == this) {
+            Greenfoot.getMouseInfo();
+        }
+        
         // Begin batch rendering
         batch.begin();
         
@@ -605,7 +615,9 @@ public abstract class World implements Screen {
         
         // Render all actors in paint order
         Array<Actor> actorsToRender = getActorsInPaintOrder();
-        for (Actor actor : actorsToRender) {
+        // Create a copy to avoid nested iterator issues
+        Array<Actor> renderCopy = new Array<Actor>(actorsToRender);
+        for (Actor actor : renderCopy) {
             if (!actor.isSleeping()) {
                 actor.render(batch);
             }
@@ -642,8 +654,13 @@ public abstract class World implements Screen {
             Greenfoot.togglePause();
         }
         
-        // Update actors (act step) - only if not paused
-        if (delta > 0 && !Greenfoot.isPaused()) {
+        // Process mouse events for drag and drop FIRST (before any state updates)
+        // Always allow WorldHandler to process mouse events, but it will be selective about inventory-only operations
+        WorldHandler.getInstance().processMouseEvents();
+        boolean isDragging = WorldHandler.getInstance().isDragging();
+        
+        // Update actors (act step) - only if not paused AND not dragging
+        if (delta > 0 && !Greenfoot.isPaused() && !isDragging) {
             startSequence();
             
             // Call world act method
@@ -651,10 +668,36 @@ public abstract class World implements Screen {
             
             // Call act on all actors in act order
             Array<Actor> actorsToAct = getActorsInActOrder();
-            for (Actor actor : actorsToAct) {
+            // Create a copy to avoid nested iterator issues
+            Array<Actor> actCopy = new Array<Actor>(actorsToAct);
+            for (Actor actor : actCopy) {
                 if (!actor.isSleeping()) {
-                    actor.act();
+                    // SAFETY CHECK: Only act if this world is still the active world
+                    // This prevents actors from acting during world transitions
+                    World currentWorld = WorldHandler.getInstance().getWorld();
+                    if (currentWorld == this) {
+                        try {
+                            actor.act();
+                        } catch (IndexOutOfBoundsException e) {
+                            // SAFETY: Catch IndexOutOfBoundsException during world transitions
+                            System.err.println("IndexOutOfBoundsException in " + actor.getClass().getSimpleName() + 
+                                             ".act() - likely during world transition. Skipping this actor's act.");
+                            e.printStackTrace();
+                        }
+                    }
                 }
+            }
+        }
+        
+        // Update mouse state AFTER all processing for next frame detection
+        Greenfoot.updateMouseState();
+        
+        // Add a small delay during drag operations for smoother interaction
+        if (isDragging) {
+            try {
+                Thread.sleep(5); // 5ms delay during drag for smoother mouse tracking
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -683,26 +726,66 @@ public abstract class World implements Screen {
     
     @Override
     public void dispose() {
-        // Clean up resources
-        if (backgroundTexture != null) {
-            backgroundTexture.dispose();
-        }
-        if (batch != null) {
-            batch.dispose();
-        }
-        if (font != null) {
-            font.dispose();
-        }
-        if (shapeRenderer != null) {
-            shapeRenderer.dispose();
-        }
-        if (whitePixel != null) {
-            whitePixel.dispose();
+        // Clean up resources safely
+        try {
+            if (backgroundTexture != null) {
+                backgroundTexture.dispose();
+                backgroundTexture = null;
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to dispose background texture: " + e.getMessage());
         }
         
-        // Dispose all actors
-        for (Actor actor : allActors) {
-            actor.dispose();
+        try {
+            if (batch != null) {
+                batch.dispose();
+                batch = null;
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to dispose batch: " + e.getMessage());
+        }
+        
+        try {
+            if (font != null) {
+                font.dispose();
+                font = null;
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to dispose font: " + e.getMessage());
+        }
+        
+        try {
+            if (shapeRenderer != null) {
+                shapeRenderer.dispose();
+                shapeRenderer = null;
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to dispose shape renderer: " + e.getMessage());
+        }
+        
+        try {
+            if (whitePixel != null) {
+                whitePixel.dispose();
+                whitePixel = null;
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Failed to dispose white pixel: " + e.getMessage());
+        }
+        
+        // Dispose all actors safely
+        if (allActors != null) {
+            // Create a copy to avoid concurrent modification
+            Array<Actor> actorsToDispose = new Array<Actor>(allActors);
+            for (Actor actor : actorsToDispose) {
+                try {
+                    if (actor != null) {
+                        actor.dispose();
+                    }
+                } catch (Exception e) {
+                    System.err.println("Warning: Failed to dispose actor " + actor.getClass().getSimpleName() + ": " + e.getMessage());
+                }
+            }
+            allActors.clear();
         }
     }
     
@@ -793,7 +876,7 @@ public abstract class World implements Screen {
     private String getImageFromProjectFile(String className) {
         try {
             // Use LibGDX internal file system (works on all platforms including Android)
-            com.badlogic.gdx.files.FileHandle projectFile = com.badlogic.gdx.Gdx.files.internal("tes/project.greenfoot");
+            com.badlogic.gdx.files.FileHandle projectFile = com.badlogic.gdx.Gdx.files.internal("project.greenfoot");
             if (projectFile.exists()) {
                 String content = projectFile.readString();
                 String[] lines = content.split("\n");
