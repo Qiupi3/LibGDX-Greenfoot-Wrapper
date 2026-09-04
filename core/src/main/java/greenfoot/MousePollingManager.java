@@ -374,7 +374,7 @@ public class MousePollingManager
             // This prevents attack clicks from triggering drag visuals
             if (dragDistance > 5) {
                 // Convert coordinates to Point for WorldHandler
-                java.awt.Point dragPoint = new java.awt.Point(px, py);
+                greenfoot.awt.Point dragPoint = new greenfoot.awt.Point(px, py);
                 
                 // Start the visual drag system
                 WorldHandler.getInstance().startDrag(dragActor, dragPoint, 1);

@@ -105,30 +105,34 @@ public class GreenfootImage {
     }
     
     public GreenfootImage(String string, int size, greenfoot.Color foreground, greenfoot.Color background, greenfoot.Color outline) {
-        String[] lines = string.split("\n");
-        
-        int maxWidth = 0;
-        for (String line : lines) {
-            int width = line.length() * (size * 3 / 4); 
-            if (width > maxWidth) {
-                maxWidth = width;
-            }
-        }
-        
-        int totalHeight = lines.length * size;
-        createPixmap(Math.max(maxWidth, 1), Math.max(totalHeight, 1));
-        
+        greenfoot.Font textFont = new greenfoot.Font(size);
+        com.badlogic.gdx.graphics.g2d.BitmapFont bitmapFont = textFont.getBitmapFont();
+        com.badlogic.gdx.graphics.g2d.BitmapFont.BitmapFontData data = bitmapFont.getData();
+
+        String[] lines = string.split("\n", -1);
+        com.badlogic.gdx.graphics.g2d.GlyphLayout layout = new com.badlogic.gdx.graphics.g2d.GlyphLayout(bitmapFont, string);
+
+        // Distance from the top of a line to its baseline, as in drawGlyphLine().
+        float baseLineFromTop = data.ascent + data.capHeight;
+
+        int width = Math.max((int) Math.ceil(layout.width), 1);
+        // The last baseline plus room below it for descenders (g, y, p, ...).
+        int height = Math.max((int) Math.ceil(baseLineFromTop + (lines.length - 1) * data.lineHeight
+                                              + Math.abs(data.descent)), 1);
+        createPixmap(width, height);
+
         if (background != null) {
-            pixmap.setColor(background.getRed() / 255f, background.getGreen() / 255f, 
+            pixmap.setColor(background.getRed() / 255f, background.getGreen() / 255f,
                           background.getBlue() / 255f, background.getAlpha() / 255f);
             pixmap.fill();
         }
-        
+
+        setFont(textFont);
         greenfoot.Color textColor = foreground != null ? foreground : greenfoot.Color.BLACK;
         setColor(textColor);
-        
+
         for (int i = 0; i < lines.length; i++) {
-            drawString(lines[i], 0, size * (i + 1));
+            drawString(lines[i], 0, Math.round(baseLineFromTop + i * data.lineHeight));
         }
     }
     
@@ -148,22 +152,37 @@ public class GreenfootImage {
         if (texture == null) {
             throw new IllegalArgumentException("Texture must not be null.");
         }
-        
+
         this.texture = texture;
-        
+
         // Create pixmap from texture for editing operations
         // Note: This is expensive but necessary for pixel-level editing
-        if (!texture.getTextureData().isPrepared()) {
-            texture.getTextureData().prepare();
-        }
-        
-        // Create pixmap with same dimensions as texture
+        Pixmap sourcePixmap = getPixmapFromTexture(texture);
+
+        // Copy the actual pixel data (including alpha/transparency) into our own
+        // pixmap. Filling with opaque white here would destroy the real image.
         pixmap = new Pixmap(texture.getWidth(), texture.getHeight(), Pixmap.Format.RGBA8888);
-        
-        pixmap.setColor(1, 1, 1, 1);
-        pixmap.fill();
-        
+        if (sourcePixmap != null) {
+            pixmap.drawPixmap(sourcePixmap, 0, 0);
+        }
+
         copyOnWrite = true;
+    }
+
+    /**
+     * Extract the CPU-side Pixmap backing a Texture, preparing its TextureData if needed.
+     * Returns null if the pixel data cannot be read back (e.g. a compressed/GPU-only format).
+     */
+    private static Pixmap getPixmapFromTexture(Texture texture) {
+        try {
+            com.badlogic.gdx.graphics.TextureData data = texture.getTextureData();
+            if (!data.isPrepared()) {
+                data.prepare();
+            }
+            return data.consumePixmap();
+        } catch (Exception e) {
+            return null;
+        }
     }
     
     GreenfootImage() { }
@@ -241,25 +260,201 @@ public class GreenfootImage {
 
     public void drawString(String string, int x, int y) {
         if (pixmap == null || string == null) return;
-        
+
         ensureWritableImage();
-        
-        String[] lines = string.split("\n");
-        pixmap.setColor(currentColor.getRed() / 255f, currentColor.getGreen() / 255f, 
-                       currentColor.getBlue() / 255f, currentColor.getAlpha() / 255f);
-        
-        int lineHeight = 12; // Default line height
+
+        com.badlogic.gdx.graphics.g2d.BitmapFont bitmapFont = getFont().getBitmapFont();
+        com.badlogic.gdx.graphics.g2d.BitmapFont.BitmapFontData data = bitmapFont.getData();
+
+        String[] lines = string.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
-            // Simplified character drawing - each character as a small rectangle
-            for (int j = 0; j < lines[i].length(); j++) {
-                char c = lines[i].charAt(j);
-                if (c != ' ') {
-                    pixmap.fillRectangle(x + j * 8, y + i * lineHeight, 6, 10);
-                }
+            drawGlyphLine(bitmapFont, lines[i], x, y + (int) Math.round(i * data.lineHeight));
+        }
+
+        invalidateTexture();
+    }
+
+    /**
+     * Draw one line of text by blitting each character's glyph bitmap from the
+     * font's own texture, tinted with the current color. y is the text baseline.
+     */
+    private void drawGlyphLine(com.badlogic.gdx.graphics.g2d.BitmapFont bitmapFont, String line, int x, int y) {
+        com.badlogic.gdx.graphics.g2d.BitmapFont.BitmapFontData data = bitmapFont.getData();
+        com.badlogic.gdx.utils.Array<com.badlogic.gdx.graphics.g2d.TextureRegion> regions = bitmapFont.getRegions();
+
+        float cr = currentColor.getRed() / 255f;
+        float cg = currentColor.getGreen() / 255f;
+        float cb = currentColor.getBlue() / 255f;
+        float ca = currentColor.getAlpha() / 255f;
+
+        // Per-glyph metrics are texture pixels; the requested point size lives in
+        // the font data's scale (BitmapFontData.setScale scales only the aggregate
+        // metrics), so every glyph metric has to be scaled here as well.
+        float scaleX = data.scaleX;
+        float scaleY = data.scaleY;
+
+        // Distance from the top of a line to its baseline: ascent = baseLine - capHeight,
+        // so baseLine = ascent + capHeight. Both are already scaled.
+        float baseLineFromTop = data.ascent + data.capHeight;
+
+        float penX = x;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            com.badlogic.gdx.graphics.g2d.BitmapFont.Glyph glyph = data.getGlyph(ch);
+            if (glyph == null || glyph.width <= 0 || glyph.height <= 0) {
+                penX += glyph != null ? glyph.xadvance * scaleX : 0;
+                continue;
+            }
+
+            com.badlogic.gdx.graphics.g2d.TextureRegion region = regions.get(glyph.page);
+            Pixmap glyphSource = glyphAtlasPixmap(region.getTexture());
+            if (glyphSource != null) {
+                int srcX = region.getRegionX() + glyph.srcX;
+                int srcY = region.getRegionY() + glyph.srcY;
+
+                // glyph.yoffset is y-up and negative: -(glyph.height + offsetFromLineTop).
+                // The pixmap is y-down, so the top of the glyph sits this far above the baseline.
+                float aboveBaseline = baseLineFromTop + (glyph.yoffset + glyph.height) * scaleY;
+
+                int dstX = Math.round(penX + glyph.xoffset * scaleX);
+                int dstY = Math.round(y - aboveBaseline);
+                int dstWidth = Math.max(1, Math.round(glyph.width * scaleX));
+                int dstHeight = Math.max(1, Math.round(glyph.height * scaleY));
+
+                blitGlyph(glyphSource, srcX, srcY, glyph.width, glyph.height,
+                          dstX, dstY, dstWidth, dstHeight, cr, cg, cb, ca);
+            }
+
+            penX += glyph.xadvance * scaleX;
+        }
+    }
+
+    /**
+     * Alpha-blend one glyph's coverage (its alpha channel) as a solid tinted
+     * color onto this image's pixmap, using the pixmap's own SourceOver blending.
+     */
+    private void blitGlyph(Pixmap source, int srcX, int srcY, int width, int height,
+                            int dstX, int dstY, int dstWidth, int dstHeight,
+                            float r, float g, float b, float a) {
+        float contrast = coverageContrast(Math.max((float) dstWidth / width,
+                                                   (float) dstHeight / height));
+
+        for (int gy = 0; gy < dstHeight; gy++) {
+            int py = dstY + gy;
+            if (py < 0 || py >= pixmap.getHeight()) continue;
+
+            // Sample the middle of the destination pixel so up- and down-scaling stay centred.
+            float sourceY = srcY + (gy + 0.5f) * height / dstHeight - 0.5f;
+
+            for (int gx = 0; gx < dstWidth; gx++) {
+                int px = dstX + gx;
+                if (px < 0 || px >= pixmap.getWidth()) continue;
+
+                float sourceX = srcX + (gx + 0.5f) * width / dstWidth - 0.5f;
+
+                int coverage = sampleCoverage(source, sourceX, sourceY,
+                                              srcX, srcY, srcX + width - 1, srcY + height - 1,
+                                              contrast);
+                if (coverage == 0) continue;
+
+                pixmap.setColor(r, g, b, a * (coverage / 255f));
+                pixmap.drawPixel(px, py);
             }
         }
-        
-        invalidateTexture();
+    }
+
+    /**
+     * Font atlases read back for glyph blitting, kept per texture. A file-backed
+     * texture decodes its whole image on every consumePixmap() call, so without this
+     * a single drawString() would decode (and leak) the atlas once per character.
+     * Weak keys let the entry go as soon as the font itself is unreachable.
+     */
+    private static final Map<Texture, Pixmap> glyphAtlases = new java.util.WeakHashMap<>();
+
+    private static Pixmap glyphAtlasPixmap(Texture texture) {
+        Pixmap cached = glyphAtlases.get(texture);
+        if (cached == null) {
+            cached = getPixmapFromTexture(texture);
+            if (cached != null) {
+                glyphAtlases.put(texture, cached);
+            }
+        }
+        return cached;
+    }
+
+    /**
+     * Strongest contrast applied to upscaled glyph coverage. Past this the edge is
+     * effectively hard and the glyph starts to show the stair-steps of the small
+     * source bitmap, which looks worse than the halo it replaces.
+     */
+    private static final float MAX_COVERAGE_CONTRAST = 8f;
+
+    /**
+     * How wide, in destination pixels, an upscaled glyph edge is allowed to stay.
+     * Two pixels was picked by rendering "BETUL" at size 160 (a 10.9x upscale of the
+     * built-in 15px font) across a range of values: with no sharpening not even the
+     * middle of a stem reached full colour (a scanline through the B read 60,60,60...
+     * instead of 0), which is the "shadow" this fixes; at one pixel the edge is a
+     * single-pixel step and the source bitmap's stair-steps start to show; two pixels
+     * gives a solid interior with a 2-3 pixel roll-off and no visible stepping.
+     */
+    private static final float TARGET_EDGE_PIXELS = 2f;
+
+    /**
+     * How hard to push a glyph's antialiased edge back together after upscaling.
+     *
+     * <p>Bilinear sampling spreads one source edge pixel over roughly {@code upscale}
+     * destination pixels, which is the "shadow" seen around big text drawn with the
+     * built-in 15px bitmap font. Running the sampled coverage through a contrast curve
+     * centred on 0.5 narrows that ramp to about {@code upscale / contrast} pixels, so
+     * aiming for a ramp of ~2 destination pixels keeps a soft, non-blocky edge at any
+     * scale. At scale 1 (a real TTF rendered by FreeType at the requested size) the
+     * curve is the identity and the font's own antialiasing is left untouched -- which
+     * is the normal case now that a real TTF ships in assets/fonts, since FreeType
+     * renders each glyph at the size it is asked for.</p>
+     */
+    private static float coverageContrast(float upscale) {
+        if (upscale <= TARGET_EDGE_PIXELS) return 1f;
+        return Math.min(upscale / TARGET_EDGE_PIXELS, MAX_COVERAGE_CONTRAST);
+    }
+
+    /**
+     * Bilinear read of a glyph's coverage (its alpha channel), clamped to the glyph's
+     * own rectangle so neighbouring glyphs in the font atlas never bleed in, then
+     * sharpened by {@code contrast} (1 leaves the bilinear result alone).
+     */
+    private static int sampleCoverage(Pixmap source, float x, float y,
+                                      int minX, int minY, int maxX, int maxY,
+                                      float contrast) {
+        int x0 = (int) Math.floor(x);
+        int y0 = (int) Math.floor(y);
+        float fx = x - x0;
+        float fy = y - y0;
+
+        int c00 = coverageAt(source, x0, y0, minX, minY, maxX, maxY);
+        int c10 = coverageAt(source, x0 + 1, y0, minX, minY, maxX, maxY);
+        int c01 = coverageAt(source, x0, y0 + 1, minX, minY, maxX, maxY);
+        int c11 = coverageAt(source, x0 + 1, y0 + 1, minX, minY, maxX, maxY);
+
+        float top = c00 + (c10 - c00) * fx;
+        float bottom = c01 + (c11 - c01) * fx;
+        float coverage = top + (bottom - top) * fy;
+
+        if (contrast != 1f) {
+            // a' = clamp((a - 0.5) * k + 0.5, 0, 1), on the 0..255 coverage scale.
+            coverage = (coverage - 127.5f) * contrast + 127.5f;
+            if (coverage <= 0f) return 0;
+            if (coverage >= 255f) return 255;
+        }
+        return Math.round(coverage);
+    }
+
+    private static int coverageAt(Pixmap source, int x, int y,
+                                  int minX, int minY, int maxX, int maxY) {
+        int cx = Math.max(minX, Math.min(maxX, x));
+        int cy = Math.max(minY, Math.min(maxY, y));
+        if (cx < 0 || cy < 0 || cx >= source.getWidth() || cy >= source.getHeight()) return 0;
+        return source.getPixel(cx, cy) & 0xFF; // alpha channel = glyph coverage
     }
 
     public void fill() {
@@ -580,6 +775,14 @@ public class GreenfootImage {
     private boolean textureNeedsUpdate = false; // Flag to track if texture needs to be regenerated
     
     public Texture getTexture() {
+        // A disposed texture keeps a non-null reference but its GL handle is 0 and it
+        // draws as a black rectangle. Rebuild it from the pixmap instead of handing
+        // back a dead texture.
+        if (texture != null && texture.getTextureObjectHandle() == 0) {
+            texture = null;
+            textureNeedsUpdate = true;
+        }
+
         if (texture == null || textureNeedsUpdate) {
             if (pixmap != null) {
                 try {
@@ -685,6 +888,10 @@ public class GreenfootImage {
             // Mark texture for update instead of immediate disposal
             textureNeedsUpdate = true;
         }
+    }
+
+    Pixmap dbgPixmap() {
+        return pixmap;
     }
 
     private void invalidateTexture() {

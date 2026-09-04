@@ -26,6 +26,11 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.audio.Sound;
 import com.badlogic.gdx.files.FileHandle;
+import com.badlogic.gdx.utils.Timer;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * LibGDX-based representation of audio that can be played in Greenfoot. 
@@ -54,6 +59,14 @@ public class GreenfootSound {
     private boolean isCurrentlyPlaying = false;
     private boolean isPaused = false;
     private boolean isLooping = false;
+
+    // LibGDX's Sound API has no completion callback, so isCurrentlyPlaying for a
+    // one-shot Sound is auto-reset via a timer scheduled for the estimated
+    // playback duration, tracked here so pause()/resume() can account for it.
+    private float estimatedDurationSeconds = -1f;
+    private float remainingDurationSeconds = -1f;
+    private long playbackStartedAtMillis = -1L;
+    private Timer.Task autoStopTask;
 
     /**
      * Creates a new sound from the given file. 
@@ -111,6 +124,10 @@ public class GreenfootSound {
                     this.sound = Gdx.audio.newSound(file);
                     this.isMusic = false;
                 }
+
+                if (!isMusic) {
+                    estimatedDurationSeconds = estimateSoundDuration(file, lowerName);
+                }
             } else {
                 Gdx.app.error("GreenfootSound", "Sound file not found: " + filename);
             }
@@ -137,12 +154,23 @@ public class GreenfootSound {
             }
             isCurrentlyPlaying = true;
         } else if (sound != null) {
-            if (!isCurrentlyPlaying || soundId == -1) {
+            if (isPaused && soundId != -1) {
+                // Resume from pause. The old code set isPaused = false without ever
+                // telling LibGDX to resume, so a paused sound stayed silent forever.
+                sound.resume(soundId);
+                isPaused = false;
+                isCurrentlyPlaying = true;
+                playbackStartedAtMillis = System.currentTimeMillis();
+                scheduleAutoStop(remainingDurationSeconds);
+            } else if (!isCurrentlyPlaying || soundId == -1) {
                 soundId = sound.play(volume);
                 isCurrentlyPlaying = true;
                 isLooping = false;
+                isPaused = false;
+                remainingDurationSeconds = estimatedDurationSeconds;
+                playbackStartedAtMillis = System.currentTimeMillis();
+                scheduleAutoStop(remainingDurationSeconds);
             }
-            isPaused = false;
         }
     }
 
@@ -171,15 +199,23 @@ public class GreenfootSound {
             }
             isCurrentlyPlaying = true;
         } else if (sound != null) {
-            if (!isLooping || soundId == -1) {
+            if (isPaused && soundId != -1) {
+                // Resume from pause, same missing-resume issue as in play().
+                sound.resume(soundId);
+                isPaused = false;
+            } else if (!isLooping || soundId == -1) {
                 if (soundId != -1) {
                     sound.stop(soundId); // Stop current playback
                 }
+                if (autoStopTask != null) {
+                    autoStopTask.cancel();
+                    autoStopTask = null;
+                }
                 soundId = sound.loop(volume);
                 isLooping = true;
+                isPaused = false;
             }
             isCurrentlyPlaying = true;
-            isPaused = false;
         }
     }
 
@@ -189,6 +225,10 @@ public class GreenfootSound {
      * sound is currently paused it will now be stopped instead.
      */
     public void stop() {
+        if (autoStopTask != null) {
+            autoStopTask.cancel();
+            autoStopTask = null;
+        }
         if (isMusic && music != null) {
             music.stop();
         } else if (sound != null && soundId != -1) {
@@ -218,6 +258,15 @@ public class GreenfootSound {
             } else if (sound != null && soundId != -1) {
                 sound.pause(soundId);
                 isPaused = true;
+
+                if (autoStopTask != null) {
+                    autoStopTask.cancel();
+                    autoStopTask = null;
+                }
+                if (playbackStartedAtMillis >= 0 && remainingDurationSeconds >= 0) {
+                    float elapsed = (System.currentTimeMillis() - playbackStartedAtMillis) / 1000f;
+                    remainingDurationSeconds = Math.max(0f, remainingDurationSeconds - elapsed);
+                }
             }
         }
     }
@@ -293,7 +342,7 @@ public class GreenfootSound {
      * After calling dispose(), this sound should not be used anymore.
      */
     public void dispose() {
-        stop();
+        stop(); // also cancels autoStopTask
         if (sound != null) {
             sound.dispose();
             sound = null;
@@ -323,5 +372,106 @@ public class GreenfootSound {
             s += ". Not found.";
         }
         return s;
+    }
+
+    /**
+     * Schedule isCurrentlyPlaying to reset to false after delaySeconds, approximating
+     * the completion callback that LibGDX's Sound API doesn't provide.
+     */
+    private void scheduleAutoStop(float delaySeconds) {
+        if (autoStopTask != null) {
+            autoStopTask.cancel();
+            autoStopTask = null;
+        }
+        if (delaySeconds < 0) {
+            // Unknown duration (couldn't estimate it): isPlaying() will stay true
+            // until stop() is called explicitly.
+            return;
+        }
+        autoStopTask = Timer.schedule(new Timer.Task() {
+            @Override
+            public void run() {
+                isCurrentlyPlaying = false;
+                isPaused = false;
+            }
+        }, Math.max(delaySeconds, 0f));
+    }
+
+    /**
+     * Estimate playback duration in seconds for a Sound-backed clip. Exact for WAV
+     * (reads the header only); a rough bitrate-based guess for compressed formats,
+     * since LibGDX's Sound API exposes no duration or completion callback.
+     */
+    private static float estimateSoundDuration(FileHandle file, String lowerName) {
+        if (lowerName.endsWith(".wav")) {
+            float wavDuration = readWavDurationSeconds(file);
+            if (wavDuration > 0) {
+                return wavDuration;
+            }
+        }
+        long length = file.length();
+        if (length <= 0) {
+            return -1f;
+        }
+        // Assume ~128kbps compressed audio as a fallback estimate.
+        return length / 16000f;
+    }
+
+    private static float readWavDurationSeconds(FileHandle file) {
+        try (InputStream in = file.read()) {
+            byte[] riffHeader = new byte[12];
+            if (readFully(in, riffHeader) < 12) {
+                return -1f;
+            }
+            if (riffHeader[0] != 'R' || riffHeader[1] != 'I' || riffHeader[2] != 'F' || riffHeader[3] != 'F') {
+                return -1f;
+            }
+
+            int byteRate = -1;
+            long dataSize = -1;
+            byte[] chunkHeader = new byte[8];
+
+            while (readFully(in, chunkHeader) == 8) {
+                String chunkId = new String(chunkHeader, 0, 4, StandardCharsets.US_ASCII);
+                long chunkSize = ((chunkHeader[7] & 0xFFL) << 24) | ((chunkHeader[6] & 0xFFL) << 16)
+                        | ((chunkHeader[5] & 0xFFL) << 8) | (chunkHeader[4] & 0xFFL);
+
+                if (chunkId.equals("fmt ")) {
+                    byte[] fmt = new byte[(int) chunkSize];
+                    if (readFully(in, fmt) < fmt.length) {
+                        break;
+                    }
+                    byteRate = ((fmt[11] & 0xFF) << 24) | ((fmt[10] & 0xFF) << 16)
+                            | ((fmt[9] & 0xFF) << 8) | (fmt[8] & 0xFF);
+                } else if (chunkId.equals("data")) {
+                    dataSize = chunkSize;
+                    break; // duration only needs the size, not the audio payload
+                } else {
+                    long skipped = 0;
+                    while (skipped < chunkSize) {
+                        long s = in.skip(chunkSize - skipped);
+                        if (s <= 0) break;
+                        skipped += s;
+                    }
+                }
+            }
+
+            if (byteRate > 0 && dataSize > 0) {
+                return dataSize / (float) byteRate;
+            }
+        } catch (IOException e) {
+            // fall through to -1
+        }
+        return -1f;
+    }
+
+    private static int readFully(InputStream in, byte[] buffer) throws IOException {
+        int total = 0;
+        while (total < buffer.length) {
+            int read = in.read(buffer, total, buffer.length - total);
+            if (read < 0) break;
+            total += read;
+        }
+        return total;
     }
 }

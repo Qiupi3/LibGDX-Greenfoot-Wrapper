@@ -11,8 +11,14 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
 import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import id.qiupi3.greenfoot.AndroidControllerConfig;
+import id.qiupi3.greenfoot.AndroidControllerConfig.ButtonType;
 import id.qiupi3.greenfoot.AndroidControllerInterface;
 import id.qiupi3.greenfoot.GreenfootGame;
+
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Android-specific version of GreenfootGame with virtual controls.
@@ -23,9 +29,17 @@ import id.qiupi3.greenfoot.GreenfootGame;
 public class AndroidGreenfootGame extends GreenfootGame implements AndroidControllerInterface {
     
     private Stage uiStage;
-    private ImageButton upButton, downButton, leftButton, rightButton, actionButton;
+    private ImageButton upButton, downButton, leftButton, rightButton, actionButton, enterButton;
     private boolean upPressed, downPressed, leftPressed, rightPressed, actionPressed;
     private boolean controllerVisible = true;
+
+    /** On-screen buttons by id ("btn_up", "btn_action", "btn_enter", ...). */
+    private final Map<String, ImageButton> buttonsById = new HashMap<>();
+    /** Press state for the flexible button system. */
+    private final Map<ButtonType, Boolean> buttonStates = new EnumMap<>(ButtonType.class);
+
+    private float controllerOpacity = 1.0f;
+    private float controllerScale = 1.0f;
     
     @Override
     public void create() {
@@ -95,9 +109,34 @@ public class AndroidGreenfootGame extends GreenfootGame implements AndroidContro
         
         // Create action button
         actionButton = createDirectionButton(buttonDrawable, pressedDrawable, false, () -> onActionPressed(true), () -> onActionPressed(false));
-        
+
+        // Create enter/confirm button (used by dialogs and menus)
+        enterButton = createDirectionButton(buttonDrawable, pressedDrawable, false,
+                () -> onButtonPressed(ButtonType.ENTER, true), () -> onButtonPressed(ButtonType.ENTER, false));
+
+        buttonsById.put("btn_up", upButton);
+        buttonsById.put("btn_down", downButton);
+        buttonsById.put("btn_left", leftButton);
+        buttonsById.put("btn_right", rightButton);
+        buttonsById.put("btn_action", actionButton);
+        buttonsById.put("btn_enter", enterButton);
+
         // Layout the controls with the new sizes
         layoutControls(buttonDisplaySize, spacingSize);
+    }
+
+    /**
+     * Normalize a button id so both "enter" and "btn_enter" resolve to the same button.
+     */
+    private ImageButton findButton(String buttonId) {
+        if (buttonId == null) {
+            return null;
+        }
+        String id = buttonId.trim().toLowerCase();
+        if (!id.startsWith("btn_")) {
+            id = "btn_" + id;
+        }
+        return buttonsById.get(id);
     }
     
     private ImageButton createDirectionButton(TextureRegionDrawable normalDrawable, 
@@ -129,6 +168,9 @@ public class AndroidGreenfootGame extends GreenfootGame implements AndroidContro
     }
     
     private void layoutControls(int buttonSize, int spacingSize) {
+        // Drop any previous layout so re-layouts don't stack tables on the stage
+        uiStage.clear();
+
         // Create main table for layout
         Table mainTable = new Table();
         mainTable.setFillParent(true);
@@ -150,10 +192,12 @@ public class AndroidGreenfootGame extends GreenfootGame implements AndroidContro
         dpadTable.add(downButton).size(buttonSize, buttonSize); // DOWN button
         dpadTable.add().size(spacingSize, spacingSize); // Empty space (bottom-right)
         
-        // Right side - Action button
+        // Right side - Action and enter buttons
         Table actionTable = new Table();
-        actionTable.add(actionButton).size(buttonSize, buttonSize); // ACTION button
-        
+        actionTable.add(enterButton).size(buttonSize, buttonSize); // ENTER button
+        actionTable.row();
+        actionTable.add(actionButton).size(buttonSize, buttonSize).padTop(spacingSize / 2f); // ACTION button
+
         // Position controls at bottom corners with padding
         // POSITIONING CONFIGURATION: 
         // - .pad(20): Distance from screen edges (increase for more margin)
@@ -216,7 +260,107 @@ public class AndroidGreenfootGame extends GreenfootGame implements AndroidContro
     public void setControllerVisible(boolean visible) {
         this.controllerVisible = visible;
     }
-    
+
+    @Override
+    public void onButtonPressed(ButtonType buttonType, boolean pressed) {
+        if (buttonType == null) {
+            return;
+        }
+        buttonStates.put(buttonType, pressed);
+
+        // Keep the directional/action flags in sync for the legacy getters
+        switch (buttonType) {
+            case UP: upPressed = pressed; break;
+            case DOWN: downPressed = pressed; break;
+            case LEFT: leftPressed = pressed; break;
+            case RIGHT: rightPressed = pressed; break;
+            case ACTION: actionPressed = pressed; break;
+            default: break;
+        }
+    }
+
+    @Override
+    public boolean isButtonPressed(ButtonType buttonType) {
+        Boolean pressed = buttonStates.get(buttonType);
+        return pressed != null && pressed;
+    }
+
+    @Override
+    public void setButtonVisible(String buttonId, boolean visible) {
+        ImageButton button = findButton(buttonId);
+        if (button != null) {
+            button.setVisible(visible);
+            // An invisible button must not swallow touches either
+            button.setTouchable(visible
+                    ? com.badlogic.gdx.scenes.scene2d.Touchable.enabled
+                    : com.badlogic.gdx.scenes.scene2d.Touchable.disabled);
+        }
+    }
+
+    @Override
+    public void setAllButtonsVisible(boolean visible) {
+        for (String id : buttonsById.keySet()) {
+            setButtonVisible(id, visible);
+        }
+    }
+
+    @Override
+    public boolean isButtonVisible(String buttonId) {
+        ImageButton button = findButton(buttonId);
+        return button != null && button.isVisible();
+    }
+
+    @Override
+    public void updateControllerLayout() {
+        if (uiStage == null) {
+            return;
+        }
+        int buttonDisplaySize = (int) (120 * controllerScale);
+        int spacingSize = (int) (80 * controllerScale);
+        layoutControls(buttonDisplaySize, spacingSize);
+        setControllerOpacity(controllerOpacity);
+    }
+
+    @Override
+    public void setControllerOpacity(float opacity) {
+        this.controllerOpacity = opacity;
+        for (ImageButton button : buttonsById.values()) {
+            button.getColor().a = opacity;
+        }
+    }
+
+    @Override
+    public void setControllerScale(float scale) {
+        this.controllerScale = scale;
+        updateControllerLayout();
+    }
+
+    @Override
+    public void vibrate(long duration, float strength) {
+        try {
+            Gdx.input.vibrate((int) duration);
+        } catch (Exception e) {
+            Gdx.app.log("AndroidGreenfootGame", "Vibration not available: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public AndroidControllerConfig.ControllerConfiguration getControllerConfig() {
+        return AndroidControllerConfig.getConfig();
+    }
+
+    @Override
+    public void setControllerConfig(AndroidControllerConfig.ControllerConfiguration config) {
+        if (config == null) {
+            return;
+        }
+        AndroidControllerConfig.setConfig(config);
+        controllerOpacity = config.controllerOpacity;
+        controllerScale = config.controllerScale;
+        setControllerVisible(config.showOnScreenControls);
+        updateControllerLayout();
+    }
+
     // Public getters for game logic to access button states
     public boolean isUpPressed() { return upPressed; }
     public boolean isDownPressed() { return downPressed; }

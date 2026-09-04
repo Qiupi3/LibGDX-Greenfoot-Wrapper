@@ -82,6 +82,19 @@ public class ActorVisitor {
     }
 
     /**
+     * Whether a point falls on an actor's image. The point is in Greenfoot pixel
+     * coordinates (origin top-left, y downwards).
+     *
+     * @param actor The relevant actor
+     * @param pixelX The x pixel coordinate, Greenfoot space
+     * @param pixelY The y pixel coordinate, Greenfoot space
+     * @return true if the point is on the actor's image; false otherwise
+     */
+    public static boolean containsWorldPixel(Actor actor, float pixelX, float pixelY) {
+        return actor.containsWorldPixel(pixelX, pixelY);
+    }
+
+    /**
      * Check if two actors intersect.
      */
     public static boolean intersects(Actor actor, Actor other) {

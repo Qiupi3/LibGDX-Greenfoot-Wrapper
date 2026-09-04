@@ -27,7 +27,6 @@ import java.util.Collection;
 import java.util.List;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
@@ -44,8 +43,13 @@ import greenfoot.collision.CollisionChecker;
 import com.badlogic.gdx.utils.Array;
 
 /**
- * LibGDX-based World implementation that serves as a Screen and container for Actors.
- * Uses LibGDX's rendering system and our custom collision management.
+ * LibGDX-based World implementation: a container for Actors that knows how to draw
+ * itself. Uses LibGDX's rendering system and our custom collision management.
+ *
+ * Deliberately NOT a libGDX {@code Screen}: Greenfoot projects routinely give their
+ * worlds methods called show(), hide(), pause(), resume() or dispose(), which would
+ * silently override the Screen lifecycle and be called by libGDX at world switches.
+ * {@link WorldScreen} adapts a World to Screen instead.
  * 
  * This class is the superclass of all worlds. A world is the area in which
  * actors live. It is a two-dimensional grid of cells, each of which can hold
@@ -66,7 +70,7 @@ import com.badlogic.gdx.utils.Array;
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
  * @version 1.0
  */
-public abstract class World implements Screen {
+public abstract class World {
     // Default background color (white)
     private static final greenfoot.Color DEFAULT_BACKGROUND_COLOR = greenfoot.Color.WHITE;
     
@@ -83,6 +87,12 @@ public abstract class World implements Screen {
     
     // Background handling
     private Texture backgroundTexture;
+    /** True only when this World created backgroundTexture itself and must free it. */
+    private boolean ownsBackgroundTexture = false;
+    /** Debug frame dump, enabled with -Dgreenfoot.debug.frameDump=true. Off by default. */
+    private static final boolean DEBUG_FRAME_DUMP =
+            Boolean.getBoolean("greenfoot.debug.frameDump");
+    private int dbgFrame = 0;
     private com.badlogic.gdx.graphics.Color backgroundColor;
     private boolean hasBackgroundTexture = false;
     private Texture whitePixel; // 1x1 white texture for rendering backgrounds
@@ -165,36 +175,35 @@ public abstract class World implements Screen {
      */
     public final void setBackground(String filename) throws IllegalArgumentException {
         try {
-            if (backgroundTexture != null) {
-                backgroundTexture.dispose();
-            }
+            disposeOwnedBackgroundTexture();
             backgroundTexture = new Texture(Gdx.files.internal(filename));
+            ownsBackgroundTexture = true; // this World created it, so this World frees it
             hasBackgroundTexture = true;
         } catch (Exception e) {
             throw new IllegalArgumentException("Could not load background image: " + filename, e);
         }
     }
-    
+
     /**
      * Set the background texture directly.
      */
     public final void setBackground(Texture texture) {
-        if (backgroundTexture != null && backgroundTexture != texture) {
-            backgroundTexture.dispose();
+        if (backgroundTexture != texture) {
+            disposeOwnedBackgroundTexture();
         }
         backgroundTexture = texture;
+        // The caller owns a texture handed in from outside
+        ownsBackgroundTexture = false;
         hasBackgroundTexture = (texture != null);
     }
-    
+
     /**
      * Set the background to a solid color.
      */
     public void setBackground(Color color) {
         hasBackgroundTexture = false;
-        if (backgroundTexture != null) {
-            backgroundTexture.dispose();
-            backgroundTexture = null;
-        }
+        disposeOwnedBackgroundTexture();
+        backgroundTexture = null;
         // Convert Greenfoot Color to LibGDX Color
         if (color != null) {
             backgroundColor = color.toLibGDXColor();
@@ -243,13 +252,17 @@ public abstract class World implements Screen {
             // Update texture for rendering
             // Don't dispose the texture here - it's managed by GreenfootImage
             // Multiple worlds/actors might share the same texture
+            disposeOwnedBackgroundTexture();
             backgroundTexture = backgroundImage.getTexture();
+            // The GreenfootImage owns this texture and may share it with other
+            // worlds or actors (image cache, static fields), so never dispose it here.
+            ownsBackgroundTexture = false;
             hasBackgroundTexture = true;
         }
         else {
             backgroundIsClassImage = false;
             backgroundImage = null;
-            // Don't dispose the texture here - it's managed by GreenfootImage
+            disposeOwnedBackgroundTexture();
             backgroundTexture = null;
             hasBackgroundTexture = false;
         }
@@ -578,15 +591,27 @@ public abstract class World implements Screen {
         collisionChecker.startSequence();
     }
     
-    // ================ LibGDX Screen Implementation ================
-    
-    @Override
-    public void show() {
-        // Called when this world becomes the active screen
+    // ================ Rendering, driven by WorldScreen ================
+    /** The Screen adapter that shows this world, created on demand and reused. */
+    private WorldScreen screen;
+
+    /**
+     * The Screen adapter for this world. Reused so that switching back to a world
+     * does not build a new Screen each time.
+     */
+    WorldScreen getScreen() {
+        if (screen == null) {
+            screen = new WorldScreen(this);
+        }
+        return screen;
     }
-    
-    @Override
-    public void render(float delta) {
+
+
+    /**
+     * Draw and step this world for one frame. Called by {@link WorldScreen}; not named
+     * render() because a user's world subclass may define a method of that name.
+     */
+    void renderFrame(float delta) {
         // Update viewport and apply camera
         viewport.apply();
         camera.update();
@@ -608,11 +633,19 @@ public abstract class World implements Screen {
         // Begin batch rendering
         batch.begin();
         
+        // Re-read the texture from the background image each frame so edits made
+        // through getBackground() show up, and so a regenerated texture is picked up.
+        if (backgroundImage != null) {
+            backgroundTexture = backgroundImage.getTexture();
+            hasBackgroundTexture = (backgroundTexture != null);
+        }
+
         // Draw background texture if available (scaled to fill viewport)
         if (hasBackgroundTexture && backgroundTexture != null) {
             batch.draw(backgroundTexture, 0, 0, viewport.getWorldWidth(), viewport.getWorldHeight());
         }
-        
+        dbgFrame++;
+
         // Render all actors in paint order
         Array<Actor> actorsToRender = getActorsInPaintOrder();
         // Create a copy to avoid nested iterator issues
@@ -647,7 +680,20 @@ public abstract class World implements Screen {
         }
         
         batch.end();
-        
+
+        if (DEBUG_FRAME_DUMP && dbgFrame == 180) { // [DBG] dump the actual rendered frame for inspection
+            try {
+                String name = "/tmp/gf_frame_" + getClass().getSimpleName() + ".png";
+                com.badlogic.gdx.graphics.Pixmap shot = com.badlogic.gdx.utils.ScreenUtils.getFrameBufferPixmap(
+                        0, 0, Gdx.graphics.getBackBufferWidth(), Gdx.graphics.getBackBufferHeight());
+                com.badlogic.gdx.graphics.PixmapIO.writePNG(Gdx.files.absolute(name), shot);
+                shot.dispose();
+                System.out.println("[DBG] wrote " + name);
+            } catch (Exception e) {
+                System.out.println("[DBG] dump failed: " + e);
+            }
+        }
+
         // Handle pause/resume keyboard shortcut (P key or ESC key)
         if (Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.P) || 
             Gdx.input.isKeyJustPressed(com.badlogic.gdx.Input.Keys.ESCAPE)) {
@@ -671,6 +717,14 @@ public abstract class World implements Screen {
             // Create a copy to avoid nested iterator issues
             Array<Actor> actCopy = new Array<Actor>(actorsToAct);
             for (Actor actor : actCopy) {
+                // An earlier actor's act() may have removed this one (directly, or
+                // through removeObjects()). Real Greenfoot does not act on an actor
+                // that left the world during the current cycle, and acting on it here
+                // makes every world-dependent call (getX(), the mouse queries, ...)
+                // throw "Actor has been removed from the world."
+                if (actor.getWorld() != this) {
+                    continue;
+                }
                 if (!actor.isSleeping()) {
                     // SAFETY CHECK: Only act if this world is still the active world
                     // This prevents actors from acting during world transitions
@@ -702,36 +756,30 @@ public abstract class World implements Screen {
         }
     }
     
-    @Override
-    public void resize(int width, int height) {
+    /**
+     * React to a change in window size. Called by {@link WorldScreen}.
+     */
+    void resizeViewport(int width, int height) {
         // Update viewport when screen size changes
         viewport.update(width, height);
         camera.update();
     }
-    
-    @Override
-    public void pause() {
-        // Handle pause
-    }
-    
-    @Override
-    public void resume() {
-        // Handle resume
-    }
-    
-    @Override
-    public void hide() {
-        // Called when this world is no longer the active screen
-    }
-    
-    @Override
-    public void dispose() {
+
+    /**
+     * Release this world's own GPU resources. Called by {@link WorldScreen}; not named
+     * dispose() because a user's world subclass may define a method of that name.
+     */
+    void disposeWorld() {
         // Clean up resources safely
         try {
-            if (backgroundTexture != null) {
-                backgroundTexture.dispose();
-                backgroundTexture = null;
-            }
+            // Only free a texture this World created. A texture obtained from a
+            // GreenfootImage is owned by that image and is usually shared - static
+            // image fields and the GreenfootImage cache hand the same texture to
+            // other worlds and actors. Disposing it here left those images pointing
+            // at a dead GL texture, which renders as a black rectangle.
+            disposeOwnedBackgroundTexture();
+            backgroundTexture = null;
+            hasBackgroundTexture = false;
         } catch (Exception e) {
             System.err.println("Warning: Failed to dispose background texture: " + e.getMessage());
         }
@@ -788,7 +836,22 @@ public abstract class World implements Screen {
             allActors.clear();
         }
     }
-    
+
+    /**
+     * Dispose the background texture only if this World created it. Textures that
+     * came from a GreenfootImage belong to that image and may be shared.
+     */
+    private void disposeOwnedBackgroundTexture() {
+        if (ownsBackgroundTexture && backgroundTexture != null) {
+            try {
+                backgroundTexture.dispose();
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to dispose background texture: " + e.getMessage());
+            }
+        }
+        ownsBackgroundTexture = false;
+    }
+
     // ================ Helper Methods ================
     
     /**

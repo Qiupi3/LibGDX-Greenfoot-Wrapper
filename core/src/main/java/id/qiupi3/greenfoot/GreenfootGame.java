@@ -32,9 +32,9 @@ public class GreenfootGame extends Game {
 
         try {
             World world = (World) ClassReflection.newInstance(mainWorldClass);
-            // CRITICAL: Register the world with the Greenfoot wrapper system first
+            // Registering the world sets the LibGDX screen too (through WorldHandler,
+            // which wraps the world in a WorldScreen), so there is nothing else to do.
             greenfoot.Greenfoot.setWorld(world);
-            setScreen(world); // World extends Screen in your wrapper
         } catch (ReflectionException e) {
             Gdx.app.error("GreenfootWrapper", "Failed to create World: " + e.getMessage());
         }
@@ -168,6 +168,44 @@ public class GreenfootGame extends Game {
         return false;
     }
     
+    /**
+     * Show or hide the whole on-screen virtual controller.
+     * Does nothing on platforms without one (e.g. desktop).
+     */
+    public static void setVirtualControllerVisible(boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setControllerVisible(visible);
+        }
+    }
+
+    /**
+     * Show or hide one on-screen button, identified by id ("btn_enter", "enter", ...).
+     */
+    public static void setVirtualButtonVisible(String buttonId, boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setButtonVisible(buttonId, visible);
+        }
+    }
+
+    /**
+     * Show or hide every on-screen button.
+     */
+    public static void setAllVirtualButtonsVisible(boolean visible) {
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setAllButtonsVisible(visible);
+        }
+    }
+
+    private static AndroidControllerInterface getController() {
+        if (instance instanceof AndroidControllerInterface) {
+            return (AndroidControllerInterface) instance;
+        }
+        return null;
+    }
+
     /**
      * Check if running on Android platform
      */

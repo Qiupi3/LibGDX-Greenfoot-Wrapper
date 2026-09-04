@@ -33,6 +33,31 @@ public interface AndroidControllerInterface {
      * Show/hide the controller UI
      */
     void setControllerVisible(boolean visible);
+
+    /**
+     * Show/hide a single on-screen button.
+     *
+     * @param buttonId Button id, e.g. "btn_up", "btn_action", "btn_enter".
+     *                 The "btn_" prefix is optional.
+     * @param visible  Whether that button should be drawn and accept touches
+     */
+    default void setButtonVisible(String buttonId, boolean visible) {
+        // Platforms without individual on-screen buttons ignore this.
+    }
+
+    /**
+     * Show/hide every on-screen button at once.
+     */
+    default void setAllButtonsVisible(boolean visible) {
+        setControllerVisible(visible);
+    }
+
+    /**
+     * Check whether a single on-screen button is currently visible.
+     */
+    default boolean isButtonVisible(String buttonId) {
+        return false;
+    }
     
     /**
      * Update the controller layout based on current configuration

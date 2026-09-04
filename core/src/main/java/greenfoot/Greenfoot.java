@@ -199,12 +199,56 @@ public class Greenfoot {
     
     /**
      * Return a random number between 0 (inclusive) and limit (exclusive).
-     * 
+     *
      * @param limit  An upper limit which the returned random number will be smaller than.
      * @return A random number within 0 to (limit-1) range.
      */
     public static int getRandomNumber(int limit) {
         return randomGenerator.nextInt(limit);
+    }
+
+    // ================ Virtual Controller (touch platforms) ================
+
+    /**
+     * Show or hide the on-screen virtual controller. This is an addition to the
+     * original Greenfoot API, for touch platforms such as Android. On platforms
+     * without an on-screen controller (desktop, HTML) the call does nothing.
+     *
+     * @param visible true to show the controller, false to hide it
+     */
+    public static void setVirtualControllerVisible(boolean visible) {
+        GreenfootGame.setVirtualControllerVisible(visible);
+    }
+
+    /**
+     * Hide every on-screen button except the named one. Useful for menus or
+     * dialogs where only a confirm button should stay reachable.
+     *
+     * @param buttonId Button id such as "btn_enter", "btn_action", "btn_up".
+     *                 The "btn_" prefix is optional.
+     */
+    public static void hideAllButtonsExcept(String buttonId) {
+        GreenfootGame.setAllVirtualButtonsVisible(false);
+        GreenfootGame.setVirtualControllerVisible(true);
+        GreenfootGame.setVirtualButtonVisible(buttonId, true);
+    }
+
+    /**
+     * Show every on-screen button again, undoing {@link #hideAllButtonsExcept(String)}.
+     */
+    public static void showAllButtons() {
+        GreenfootGame.setAllVirtualButtonsVisible(true);
+        GreenfootGame.setVirtualControllerVisible(true);
+    }
+
+    /**
+     * Show or hide a single on-screen button.
+     *
+     * @param buttonId Button id such as "btn_enter" ("btn_" prefix optional)
+     * @param visible true to show that button
+     */
+    public static void setButtonVisible(String buttonId, boolean visible) {
+        GreenfootGame.setVirtualButtonVisible(buttonId, visible);
     }
 
     /**
@@ -586,63 +630,50 @@ public class Greenfoot {
         int mouseY = Gdx.input.getY();
         
         World currentWorld = WorldHandler.getInstance().getWorld();
-        if (currentWorld == null) {
-            // For Actor objects, we can try an alternative approach without the world
-            if (obj instanceof Actor) {
-                Actor actor = (Actor) obj;
-                
-                try {
-                    float actorX = actor.getX();
-                    float actorY = actor.getY();
-                    
-                    float cellSize = 50f;
-                    float screenActorX = actorX * cellSize;
-                    float screenActorY = actorY * cellSize;
-                    
-                    // Simple bounding box check (rough approximation)
-                    boolean collision = Math.abs(mouseX - screenActorX) < cellSize/2 && 
-                                       Math.abs(mouseY - screenActorY) < cellSize/2;
-                    
-                    return collision;
-                } catch (Exception e) {
-                    return false;
-                }
+
+        if (obj instanceof Actor) {
+            Actor actor = (Actor) obj;
+
+            // An actor that has been removed from its world - possibly by another
+            // actor earlier in this very act cycle - is never under the mouse.
+            // Checking the world explicitly (rather than catching the exception)
+            // keeps a plain Greenfoot.mouseClicked(this) from blowing up with
+            // "Actor has been removed from the world." out of getX()/getY().
+            World actorWorld = actor.getWorld();
+            if (actorWorld == null) {
+                return false;
             }
-            
+
+            // Unproject through the active world when there is one; an actor that
+            // still belongs to a world can be queried before WorldHandler has been
+            // told about it, so fall back to the actor's own world.
+            World viewWorld = currentWorld != null ? currentWorld : actorWorld;
+
+            Vector3 actorCoords = new Vector3(mouseX, mouseY, 0);
+            viewWorld.getCamera().unproject(actorCoords);
+            // Greenfoot pixel space: origin top-left, y growing downwards.
+            float pointerX = actorCoords.x;
+            float pointerY = viewWorld.getHeightInPixels() - actorCoords.y;
+
+            // The actor's image, in Greenfoot pixel space, is the hit area - the same
+            // test World.getObjectsAt() uses, so both agree on what is under the mouse.
+            return actor.containsWorldPixel(pointerX, pointerY);
+        }
+
+        if (currentWorld == null) {
             // For non-Actor objects when world is null, return false
             return false;
         }
-        
+
         // Convert screen coordinates to world coordinates using camera
-        com.badlogic.gdx.math.Vector3 worldCoords = new com.badlogic.gdx.math.Vector3(mouseX, mouseY, 0);
+        Vector3 worldCoords = new Vector3(mouseX, mouseY, 0);
         currentWorld.getCamera().unproject(worldCoords);
         float worldX = worldCoords.x;
         float worldY = worldCoords.y;
-        
+
         float correctedWorldY = currentWorld.getHeightInPixels() - worldY;
-        
-        if (obj instanceof Actor) {
-            Actor actor = (Actor) obj;
-            
-            float actorX = actor.getX();
-            float actorY = actor.getY();
-            
-            //TODO: try lower value
-            float actorWidth = 80f;
-            float actorHeight = 80f;
-            
-            // Center the collision box around the actor position
-            float boxLeft = actorX - actorWidth/2;
-            float boxRight = actorX + actorWidth/2;
-            float boxBottom = actorY - actorHeight/2;
-            float boxTop = actorY + actorHeight/2;
-            
-            boolean collision = worldX >= boxLeft && worldX <= boxRight &&
-                               correctedWorldY >= boxBottom && correctedWorldY <= boxTop;
-            
-            return collision;
-            
-        } else if (obj instanceof World) {
+
+        if (obj instanceof World) {
             // Mouse is on world background if it's within world bounds
             World world = (World) obj;
             float worldWidth = world.getWidthInPixels();
@@ -655,7 +686,8 @@ public class Greenfoot {
         // Unknown object type, return false
         return false;
     }
-    
+
+
     /**
      * Poll for key input using LibGDX input system.
      */
