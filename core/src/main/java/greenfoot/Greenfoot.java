@@ -252,6 +252,48 @@ public class Greenfoot {
     }
 
     /**
+     * Choose the on-screen pad layout. This is an addition to the original Greenfoot
+     * API, for touch platforms.
+     *
+     * @param layoutId "4-4" for four buttons each side, "4-2" for four on the left
+     *                 and two on the right
+     */
+    public static void setVirtualControllerLayout(String layoutId) {
+        GreenfootGame.setVirtualControllerLayout(layoutId);
+    }
+
+    /**
+     * Bind a key to one on-screen button. The button then reports that key through
+     * {@link #isKeyDown(String)} and labels itself with it.
+     *
+     * @param buttonId slot id: "left_up", "left_down", "left_left", "left_right",
+     *                 "right_1".."right_4", or "special" for a tap anywhere on screen
+     * @param keyName the Greenfoot key name to send, such as "w" or "space";
+     *                null clears the binding and hides the button
+     */
+    public static void mapVirtualButton(String buttonId, String keyName) {
+        GreenfootGame.mapVirtualButton(buttonId, keyName);
+    }
+
+    /**
+     * Hide the on-screen pad automatically whenever one of these classes is on screen,
+     * instead of calling {@link #setVirtualControllerVisible(boolean)} by hand.
+     *
+     * A World subclass hides the pad while that world is showing; an Actor subclass
+     * hides it while at least one actor of that class is in the world - which is the
+     * easy way to drop the pad during a dialogue, a menu overlay or a modal panel.
+     *
+     * <pre>
+     * Greenfoot.hideVirtualControllerFor(MainMenu.class, Credit.class, Dialog.class);
+     * </pre>
+     *
+     * @param classes the World and Actor classes that hide the pad; pass none to clear
+     */
+    public static void hideVirtualControllerFor(Class<?>... classes) {
+        GreenfootGame.setVirtualControllerHiddenFor(classes);
+    }
+
+    /**
      * Play sound from the given file. The file format must be one of: aiff, au,
      * wav, mp3. The file should be located in the sounds directory in the project.
      * This method returns once the sound has started playing - it does not wait
@@ -391,6 +433,11 @@ public class Greenfoot {
                                   Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
                                   Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
         
+        // Presses that belong to the on-screen pad are not mouse activity.
+        if (GreenfootGame.isTouchOnVirtualController()) {
+            return null;
+        }
+
         boolean hasActivity = Gdx.input.justTouched() || anyButtonPressed || mouseMoved(null);
         
         if (hasActivity || anyButtonPressed) {
@@ -625,6 +672,13 @@ public class Greenfoot {
             return true;
         }
         
+        // A touch that landed on an on-screen pad button belongs to the pad, not to the
+        // world: without this, every button press also registered as a click wherever
+        // the button happens to sit over the world.
+        if (GreenfootGame.isTouchOnVirtualController()) {
+            return false;
+        }
+
         // Get mouse coordinates in screen space
         int mouseX = Gdx.input.getX();
         int mouseY = Gdx.input.getY();
@@ -1042,8 +1096,13 @@ public class Greenfoot {
             
             // Special keys
             case "space":
-                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE) ||
-                           Gdx.input.isButtonPressed(Input.Buttons.LEFT); // Left mouse button acts as space
+                // Only the actual space bar. This used to accept a left mouse button
+                // press as well, which on a touch screen means EVERY touch: tapping any
+                // pad button made isKeyDown("space") true at the same time, so pressing
+                // "w" turned the player and then fired the space action instead of
+                // walking. (Only a button bound to "f" escaped it, because "f" has no
+                // such alias.)
+                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE);
                 break;
             case "enter":
                 keyPressed = Gdx.input.isKeyPressed(Input.Keys.ENTER);
@@ -1078,28 +1137,9 @@ public class Greenfoot {
         }
         
         // VIRTUAL CONTROLLER INTEGRATION:
-        // Check virtual controller input for movement and action keys
-        // This allows existing Greenfoot.isKeyDown() calls to work with virtual controller!
-        switch (key) {
-            case "up":
-            case "w":
-                return GreenfootGame.isVirtualControllerPressed("up");
-            case "down":
-            case "s":
-                return GreenfootGame.isVirtualControllerPressed("down");
-            case "left":
-            case "a":
-                return GreenfootGame.isVirtualControllerPressed("left");
-            case "right":
-            case "d":
-                return GreenfootGame.isVirtualControllerPressed("right");
-            case "space":
-                return GreenfootGame.isVirtualControllerPressed("action"); // Map space bar to action button
-            case "enter":
-                return GreenfootGame.isVirtualControllerPressed("enter"); // Map enter to enter button
-            default:
-                return false;
-        }
+        // The on-screen pad binds each button to a Greenfoot key name, so any key the
+        // project asks about - not just the directions - can be produced by a button.
+        return GreenfootGame.isVirtualKeyDown(key);
     }
     
     // ================ Text Input Helper Methods ================
