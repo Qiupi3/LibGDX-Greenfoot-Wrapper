@@ -38,11 +38,10 @@ import java.util.List;
 
 /**
  * LibGDX-based collision manager that handles spatial partitioning and collision detection
- * using LibGDX's optimized data structures and math library.
+ * for Greenfoot actors using LibGDX's optimized data structures and math library.
  * 
  * This class re-implements greenfoot.collision.platforms.ColManager to provide a LibGDX backend,
- * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
- * mobile devices and other platforms).
+ * mainly to allow Greenfoot projects to run on LibGDX platforms.
  * 
  * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
  * Read the original documentation at
@@ -51,6 +50,7 @@ import java.util.List;
  * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 

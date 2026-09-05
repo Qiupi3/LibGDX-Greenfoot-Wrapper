@@ -38,7 +38,8 @@ import com.badlogic.gdx.Screen;
  * Keeping the Screen implementation in a separate object means a world's own methods
  * are called only by the project's own code, exactly as in Greenfoot.
  *
- * @author Qiupi3 (LibGDX wrapper implementation)
+ * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class WorldScreen implements Screen {

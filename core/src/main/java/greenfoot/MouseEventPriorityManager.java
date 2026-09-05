@@ -33,6 +33,7 @@ package greenfoot;
  * 5. move
  * 
  * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
  * @version 1.0
  */

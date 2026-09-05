@@ -157,9 +157,10 @@ Thumbs.db
 .vscode/
 core/src/main/java/user-project/**/*
 assets/**/*
-# ...except the fonts the wrapper itself ships (DejaVu Sans, used by greenfoot.Font).
+# except the fonts, the wrapper itself ships DejaVu Sans, used by greenfoot.Font
 !assets/fonts/
 !assets/fonts/**
+!assets/controller.properties
 
 ## Special cases:
 

@@ -34,8 +34,11 @@ import com.badlogic.gdx.math.Vector3;
  * This is a recreation of the original Greenfoot MousePollingManager but using
  * LibGDX as the backend instead of Swing.
  * 
- * @author Poul Henriksen (Original Greenfoot MousePollingManager author)
- * @modified-by Assistant (LibGDX wrapper implementation)
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
+ * @version 1.0
  */
 public class MousePollingManager
 {

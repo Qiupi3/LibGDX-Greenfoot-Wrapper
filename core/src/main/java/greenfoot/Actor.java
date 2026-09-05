@@ -47,6 +47,7 @@ import greenfoot.platforms.ActorDelegate;
  * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 public class Actor {

@@ -1,38 +1,65 @@
-# greenfoot-wrapper
+# LibGDX Greenfoot Wrapper
 
-A [libGDX](https://libgdx.com/) project generated with [gdx-liftoff](https://github.com/libgdx/gdx-liftoff).
+A cross-platform wrapper that allows [Greenfoot](https://www.greenfoot.org/) scenarios and games to run on [libGDX](https://libgdx.com/). Export your Greenfoot projects to Desktop (Windows, macOS, Linux), Mobile (Android).
 
-This project was generated with a template including simple application launchers and an `ApplicationAdapter` extension that draws libGDX logo.
+## Key Features
 
-## Platforms
+- **Full Greenfoot API Compatibility**: Implements `greenfoot.Actor`, `greenfoot.World`, `greenfoot.Greenfoot`, `greenfoot.GreenfootImage`, `greenfoot.GreenfootSound`, `greenfoot.Color`, `greenfoot.Font`, and `greenfoot.MouseInfo`.
+- **AWT Replacement Library**: Re-implements `java.awt.*` (`BufferedImage`, `Shape`, `Rectangle`, `Ellipse`, `Line`, `Polygon`, `Point`) using LibGDX `Pixmap` for 100% cross-platform mobile & desktop execution without AWT dependencies.
+- **On-Screen Touch Pad (Virtual Controller)**: Integrated touch controls for mobile (Android) and testable on desktop via `-Dgreenfoot.virtualController=true`. Supports 2 to 8 button layouts with custom key mappings.
+- **Spatial Collision Partitioning**: `ColManager` provides LibGDX-accelerated 2D collision detection and spatial querying for high performance.
+- **Automatic Asset Copy & Project Detection**: Gradle task `copyGreenfootAssets` automatically locates `project.greenfoot` in `user-project/` and synchronizes assets to the runtime asset directory.
 
-- `core`: Main module with the application logic shared by all platforms.
-- `lwjgl3`: Primary desktop platform using LWJGL3; was called 'desktop' in older docs.
-- `android`: Android mobile platform. Needs Android SDK.
-- `html`: Web platform using GWT and WebGL. Supports only Java projects.
+---
 
-## Gradle
+## Quick Start Guide
 
-This project uses [Gradle](https://gradle.org/) to manage dependencies.
-The Gradle wrapper was included, so you can run Gradle tasks using `gradlew.bat` or `./gradlew` commands.
-Useful Gradle tasks and flags:
+### 1. Adding Your Greenfoot Project
+Place your Greenfoot project folder under `core/src/main/java/user-project/`:
 
-- `--continue`: when using this flag, errors will not stop the tasks from running.
-- `--daemon`: thanks to this flag, Gradle daemon will be used to run chosen tasks.
-- `--offline`: when using this flag, cached dependency archives will be used.
-- `--refresh-dependencies`: this flag forces validation of all dependencies. Useful for snapshot versions.
-- `android:lint`: performs Android project validation.
-- `build`: builds sources and archives of every project.
-- `cleanEclipse`: removes Eclipse project data.
-- `cleanIdea`: removes IntelliJ project data.
-- `clean`: removes `build` folders, which store compiled classes and built archives.
-- `eclipse`: generates Eclipse project data.
-- `html:dist`: compiles GWT sources. The compiled application can be found at `html/build/dist`: you can use any HTTP server to deploy it.
-- `html:superDev`: compiles GWT sources and runs the application in SuperDev mode. It will be available at [localhost:8080/html](http://localhost:8080/html). Use only during development.
-- `idea`: generates IntelliJ project data.
-- `lwjgl3:jar`: builds application's runnable jar, which can be found at `lwjgl3/build/libs`.
-- `lwjgl3:run`: starts the application.
-- `test`: runs unit tests (if any).
+```text
+core/src/main/java/user-project/
+└── MyGame/
+    ├── project.greenfoot
+    ├── MyWorld.java
+    ├── Player.java
+    ├── images/
+    └── sounds/
+```
 
-Note that most tasks that are not specific to a single project can be run with `name:` prefix, where the `name` should be replaced with the ID of a specific project.
-For example, `core:clean` removes `build` folder only from the `core` project.
+### 2. Running & Building
+
+| Target Platform | Command | Notes |
+| :--- | :--- | :--- |
+| **Desktop (LWJGL3)** | `./gradlew lwjgl3:run` | Launches the game on desktop |
+| **Desktop Executable JAR** | `./gradlew lwjgl3:jar` | Creates runnable JAR at `lwjgl3/build/libs/` |
+| **Android APK** | `./gradlew android:assembleDebug` | Creates debug APK at `android/build/outputs/apk/debug/` |
+
+---
+
+## Unsupported / Limited Features
+
+The wrapper focuses on single-player and arcade Greenfoot scenario execution across desktop, mobile, and web. The following native Greenfoot features have limitations or stubs:
+
+- **Greenfoot UserInfo Server**: `UserInfo.getMyInfo()` and `UserInfo.getTop()` operate locally using LibGDX `Preferences` rather than connecting to the central Greenfoot website server.
+- **Microphone Input (`Greenfoot.getMicLevel()`)**: Stubbed, returns `0` (LibGDX does not provide a standard cross-platform microphone API).
+- **Video Recording (`Greenfoot.startRecording()`, `stopRecording()`)**: Unimplemented / stubbed.
+- **Native AWT / Swing Dialogs**: Swing dialogs (such as `JOptionPane`) and native AWT frames are replaced by standard wrapper classes; direct `java.awt.*` calls in user code should be updated to `greenfoot.awt.*` or standard Greenfoot APIs.
+
+---
+
+## Project Structure
+
+- `core`: Core wrapper logic (`greenfoot.*`, `greenfoot.awt.*`, `id.qiupi3.greenfoot.*`) and user project sources (`user-project/`).
+- `lwjgl3`: Desktop LWJGL3 platform launcher.
+- `android`: Android application launcher & activity.
+- `html`: GWT / WebGL web platform launcher.
+
+---
+
+## License & Attribution
+
+This wrapper is licensed under the **GNU General Public License v2 with Classpath Exception** (GPLv2+Classpath Exception), maintaining full license compatibility with the original Greenfoot software.
+
+- **LibGDX Wrapper Author**: Qiupi3, DavidsonRafaelK
+- **Original Greenfoot Authors**: Poul Henriksen, Michael Kolling, Davin McCall, Neil Brown, Fabio Heday, Amjad Altadmri.
