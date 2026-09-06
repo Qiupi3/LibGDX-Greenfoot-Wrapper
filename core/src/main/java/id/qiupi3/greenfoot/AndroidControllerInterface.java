@@ -30,6 +30,7 @@ import id.qiupi3.greenfoot.AndroidControllerConfig.ButtonType;
  * Now supports flexible button configurations and multiple gamepad layouts.
  * 
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public interface AndroidControllerInterface {

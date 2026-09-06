@@ -57,6 +57,7 @@ import java.util.Map;
  * deliberately does NOT consume, so tapping the world still works normally.
  *
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class VirtualController {

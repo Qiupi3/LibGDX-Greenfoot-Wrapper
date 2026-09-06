@@ -29,6 +29,7 @@ import greenfoot.GreenfootImage;
  * This is a minimal implementation for compatibility.
  * 
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public interface ActorDelegate {

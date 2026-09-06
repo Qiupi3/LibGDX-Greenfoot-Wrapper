@@ -32,6 +32,7 @@ package greenfoot.awt;
  * runtime does not ship java.awt, so the AWT class cannot be used here.
  * 
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class Point {

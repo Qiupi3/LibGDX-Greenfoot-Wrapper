@@ -32,6 +32,7 @@ import com.badlogic.gdx.math.Vector3;
  * press, click, drag, dragEnd, move - and allows prioritized access to them.
  * 
  * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
  * @version 1.0
  */

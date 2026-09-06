@@ -39,6 +39,7 @@ import com.badlogic.gdx.Screen;
  * are called only by the project's own code, exactly as in Greenfoot.
  *
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class WorldScreen implements Screen {

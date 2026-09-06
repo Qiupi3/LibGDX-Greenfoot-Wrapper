@@ -34,6 +34,7 @@ import greenfoot.World;
  * Manages game lifecycle, screen transitions, and virtual controller initialization.
  * 
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class GreenfootGame extends Game {

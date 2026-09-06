@@ -40,6 +40,7 @@ import id.qiupi3.greenfoot.VirtualController;
  * the key names the pad now speaks.
  *
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class AndroidGreenfootGame extends GreenfootGame implements AndroidControllerInterface {
