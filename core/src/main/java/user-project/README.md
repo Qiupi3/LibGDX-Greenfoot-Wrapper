@@ -1,10 +1,23 @@
-# How to Use This Project
+# User Project Directory
 
-## Step 1: Prepare Your Greenfoot Project
-Place your Greenfoot project folder in this directory. Ensure that the folder contains all necessary files for your project to run properly.
+Place your Greenfoot project folder inside this directory: `core/src/main/java/user-project/`
 
-## Step 2: Verify the Structure
-Make sure the folder structure aligns with the requirements of this wrapper. Refer to the documentation for any specific guidelines.
+## Recommended Structure
 
-## Step 3: Build and Run
-Once your Greenfoot project is in place, follow the build instructions provided in the main project documentation to compile and execute your project.
+```text
+core/src/main/java/user-project/
+└── MyGame/
+    ├── project.greenfoot
+    ├── MyWorld.java
+    ├── Player.java
+    ├── images/
+    │   └── player.png
+    └── sounds/
+        └── jump.wav
+```
+
+## How It Works
+
+1. **Auto-Detection**: The build system automatically scans `user-project/` for subfolders containing `project.greenfoot`.
+2. **Automatic Asset Synchronization**: Running `./gradlew lwjgl3:run` or `./gradlew android:assembleDebug` triggers `copyGreenfootAssets`, which automatically copies the project's images, sounds, and configuration into the runtime `assets/` directory.
+3. **Compilation**: Java files in `user-project/` are automatically compiled as part of the core module source set.

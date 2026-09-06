@@ -31,6 +31,7 @@ import greenfoot.platforms.ActorDelegate;
  * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
  * 
  * @author Poul Henriksen (Original Greenfoot version's author)
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
  */
 public class ActorVisitor {
     /**

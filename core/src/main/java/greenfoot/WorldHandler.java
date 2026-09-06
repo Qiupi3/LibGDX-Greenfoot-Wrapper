@@ -36,7 +36,7 @@ import greenfoot.awt.Point;
  * Read the original documentation at
  * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
  * 
- * @author Poul Henriksen (Original Greenfoot version's author)\
+ * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
  * @version 1.0

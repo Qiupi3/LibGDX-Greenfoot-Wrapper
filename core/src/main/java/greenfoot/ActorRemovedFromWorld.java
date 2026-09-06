@@ -24,8 +24,10 @@ package greenfoot;
 
 /**
  * Private class used to give a nicer message when detailing why an actor was removed.
+ * 
+ * @author Poul Henriksen, Michael Kolling
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
  */
-
 class ActorRemovedFromWorld extends Throwable {
 
 }
