@@ -1,3 +1,25 @@
+/*
+ This file is part of the LibGDX-Greenfoot wrapper.
+ Copyright (C) 2026 Qiupi3
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package id.qiupi3.greenfoot;
 
 import id.qiupi3.greenfoot.AndroidControllerConfig.ButtonType;
@@ -6,6 +28,10 @@ import id.qiupi3.greenfoot.AndroidControllerConfig.ButtonType;
  * Interface for Android-specific controller functionality.
  * This allows the core game to communicate with Android UI controls.
  * Now supports flexible button configurations and multiple gamepad layouts.
+ * 
+ * @author Qiupi3
+ * @author DavidsonRafaelK
+ * @version 1.0
  */
 public interface AndroidControllerInterface {
     
@@ -33,6 +59,31 @@ public interface AndroidControllerInterface {
      * Show/hide the controller UI
      */
     void setControllerVisible(boolean visible);
+
+    /**
+     * Show/hide a single on-screen button.
+     *
+     * @param buttonId Button id, e.g. "btn_up", "btn_action", "btn_enter".
+     *                 The "btn_" prefix is optional.
+     * @param visible  Whether that button should be drawn and accept touches
+     */
+    default void setButtonVisible(String buttonId, boolean visible) {
+        // Platforms without individual on-screen buttons ignore this.
+    }
+
+    /**
+     * Show/hide every on-screen button at once.
+     */
+    default void setAllButtonsVisible(boolean visible) {
+        setControllerVisible(visible);
+    }
+
+    /**
+     * Check whether a single on-screen button is currently visible.
+     */
+    default boolean isButtonVisible(String buttonId) {
+        return false;
+    }
     
     /**
      * Update the controller layout based on current configuration

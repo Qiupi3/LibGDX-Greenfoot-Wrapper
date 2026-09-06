@@ -1,6 +1,7 @@
 /*
  This file is part of the LibGDX-Greenfoot wrapper.
  Provides LibGDX-compatible implementation of java.awt.geom.Line2D for cross-platform compatibility.
+ Copyright (C) 2026 Qiupi3
  
  This program is free software; you can redistribute it and/or
  modify it under the terms of the GNU General Public License
@@ -11,6 +12,13 @@
  but WITHOUT ANY WARRANTY; without even the implied warranty of
  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
 */
 
 package greenfoot.awt;
@@ -24,7 +32,7 @@ import com.badlogic.gdx.graphics.Pixmap;
  * This class replaces java.awt.geom.Line2D to provide LibGDX backend compatibility,
  * mainly to allow Greenfoot projects to run on LibGDX platforms.
  * 
- * @author Qiupi3 (LibGDX wrapper implementation)
+ * @author Qiupi3
  * @version 1.0
  */
 public class Line extends Shape {

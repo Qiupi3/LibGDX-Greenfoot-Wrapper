@@ -31,6 +31,7 @@ import java.util.Iterator;
  * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
  * 
  * @author Davin McCall (Original Greenfoot version's author)
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
  */
 public class ActorSet extends AbstractSet<Actor> {
     private ListNode listHeadTail = new ListNode();

@@ -31,6 +31,10 @@ import greenfoot.platforms.ActorDelegate;
  * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
  * 
  * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
+ * @version 1.0
  */
 public class ActorVisitor {
     /**
@@ -79,6 +83,19 @@ public class ActorVisitor {
      */
     public static boolean containsPoint(Actor actor, int px, int py) {
         return actor.containsPoint(px, py);
+    }
+
+    /**
+     * Whether a point falls on an actor's image. The point is in Greenfoot pixel
+     * coordinates (origin top-left, y downwards).
+     *
+     * @param actor The relevant actor
+     * @param pixelX The x pixel coordinate, Greenfoot space
+     * @param pixelY The y pixel coordinate, Greenfoot space
+     * @return true if the point is on the actor's image; false otherwise
+     */
+    public static boolean containsWorldPixel(Actor actor, float pixelX, float pixelY) {
+        return actor.containsWorldPixel(pixelX, pixelY);
     }
 
     /**

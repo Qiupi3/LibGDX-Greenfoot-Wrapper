@@ -1,25 +1,51 @@
+/*
+ This file is part of the LibGDX-Greenfoot wrapper.
+ Copyright (C) 2026 Qiupi3
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package id.qiupi3.greenfoot;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.Scanner;
 
 /**
  * Configuration class for dynamically detecting and managing Greenfoot project paths.
- * This class scans the actual file system to find project folders and caches the results.
+ * <p>
+ * The primary detection mechanism reads {@code project_cache.txt} from the assets
+ * root — this file is written by the {@code copyGreenfootAssets} Gradle task at
+ * build time. If that file is missing (e.g. during first-time development), we
+ * fall back to scanning the assets directory for any subfolder that contains
+ * {@code project.greenfoot}, then to parsing {@code assets.txt}.
+ * 
+ * @author Qiupi3
+ * @version 1.0
  */
 public class GreenfootProjectConfig {
     private static String userProjectFolder = null;
     private static boolean initialized = false;
     private static final String CACHE_FILE = "project_cache.txt";
-    
+
     /**
      * Get the user project folder name (e.g., "Clash Perpetuation", "MyGame", etc.)
      * This method will automatically detect the project folder if not already initialized.
-     * 
+     *
      * @return The user project folder name, or null if not found
      */
     public static String getUserProjectFolder() {
@@ -28,11 +54,11 @@ public class GreenfootProjectConfig {
         }
         return userProjectFolder;
     }
-    
+
     /**
      * Manually set the user project folder (for testing or specific cases).
      * This can be useful when automatic detection fails or for custom project structures.
-     * 
+     *
      * @param folder The folder name to use as the user project folder
      */
     public static void setUserProjectFolder(String folder) {
@@ -44,7 +70,7 @@ public class GreenfootProjectConfig {
             System.out.println("GreenfootConfig: User project folder manually set to: " + folder);
         }
     }
-    
+
     /**
      * Reset the configuration to allow re-detection of the project folder.
      * Useful for testing or when the project structure changes.
@@ -53,177 +79,166 @@ public class GreenfootProjectConfig {
         userProjectFolder = null;
         initialized = false;
     }
-    
+
+    // ------------------------------------------------------------------
+    //  Detection pipeline
+    // ------------------------------------------------------------------
+
     /**
-     * Simple detection: scan the assets directory for project.greenfoot files and cache the result.
+     * Runs the detection pipeline in priority order:
+     * <ol>
+     *   <li>Read {@code project_cache.txt} (written by the Gradle build)</li>
+     *   <li>Scan the assets directory for a subfolder with {@code project.greenfoot}</li>
+     *   <li>Parse {@code assets.txt} for folder names referencing {@code project.greenfoot}</li>
+     * </ol>
      */
     private static void detectUserProjectFolder() {
         initialized = true;
-        
+
         try {
-            // First, try to load from cache
+            // 1. Try the build-time cache first (fastest, most reliable)
             userProjectFolder = loadFromCache();
             if (userProjectFolder != null) {
-                System.out.println("GreenfootConfig: Loaded project folder from cache: " + userProjectFolder);
+                log("Loaded project folder from cache: " + userProjectFolder);
                 return;
             }
-            
-            // If no cache, scan the file system directly
-            userProjectFolder = scanFileSystemForProject();
-            
+
+            // 2. Scan via LibGDX file handles (works on all platforms)
+            userProjectFolder = scanUsingLibGDX();
             if (userProjectFolder != null) {
-                System.out.println("GreenfootConfig: Found project folder: " + userProjectFolder);
-                saveToCache(userProjectFolder);
-            } else {
-                System.out.println("GreenfootConfig: No project folder found, using default");
-                userProjectFolder = "MyGame";
+                log("Detected project folder via LibGDX scan: " + userProjectFolder);
+                return;
             }
-            
+
+            // 3. Parse assets.txt as last resort
+            userProjectFolder = scanAssetsTextFile();
+            if (userProjectFolder != null) {
+                log("Detected project folder from assets.txt: " + userProjectFolder);
+                return;
+            }
+
+            // Nothing found
+            log("WARNING: No project folder found. Make sure your Greenfoot project" +
+                " was copied to the assets directory by the copyGreenfootAssets Gradle task.");
+            userProjectFolder = null;
+
         } catch (Exception e) {
             System.err.println("GreenfootConfig: Error detecting project folder: " + e.getMessage());
-            userProjectFolder = "MyGame";
+            userProjectFolder = null;
         }
     }
-    
+
+    // ------------------------------------------------------------------
+    //  Strategy 1: project_cache.txt (written by Gradle at build time)
+    // ------------------------------------------------------------------
+
     /**
-     * Scan the actual file system (not through LibGDX) to find project folders.
-     * This bypasses all the LibGDX asset limitations.
-     */
-    private static String scanFileSystemForProject() {
-        try {
-            // First try using LibGDX FileHandle (works on Android)
-            if (Gdx.files != null) {
-                String result = scanUsingLibGDX();
-                if (result != null) {
-                    return result;
-                }
-            }
-            
-            // Fall back to java.io.File for desktop platforms
-            File assetsDir = new File("assets");
-            if (!assetsDir.exists()) {
-                // Try alternative locations
-                assetsDir = new File("../assets");
-                if (!assetsDir.exists()) {
-                    assetsDir = new File("../../assets");
-                }
-            }
-            
-            if (assetsDir.exists() && assetsDir.isDirectory()) {
-                System.out.println("GreenfootConfig: Scanning directory: " + assetsDir.getAbsolutePath());
-                File[] subdirs = assetsDir.listFiles(File::isDirectory);
-                
-                if (subdirs != null) {
-                    for (File subdir : subdirs) {
-                        File projectFile = new File(subdir, "project.greenfoot");
-                        if (projectFile.exists()) {
-                            System.out.println("GreenfootConfig: Found project.greenfoot in: " + subdir.getName());
-                            return subdir.getName();
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("GreenfootConfig: Error scanning file system: " + e.getMessage());
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Scan for project folders using LibGDX FileHandle API (works on all platforms including Android).
-     */
-    private static String scanUsingLibGDX() {
-        try {
-            // Try some common project folder names first
-            String[] commonFolders = {
-                "MyGame",
-                "MyWorld",
-                "Game"
-            };
-            
-            for (String folderName : commonFolders) {
-                FileHandle projectFile = Gdx.files.internal(folderName + "/project.greenfoot");
-                if (projectFile.exists()) {
-                    System.out.println("GreenfootConfig: Found project.greenfoot in: " + folderName);
-                    return folderName;
-                }
-            }
-            
-            // If common names don't work, we can't easily list directories on Android
-            // So we'll just try reading from cache or using a hardcoded value
-            System.out.println("GreenfootConfig: Could not auto-detect project folder using LibGDX");
-        } catch (Exception e) {
-            System.err.println("GreenfootConfig: Error scanning with LibGDX: " + e.getMessage());
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Load the cached project folder name from file.
+     * Load the cached project folder name from {@code project_cache.txt}.
+     * The Gradle {@code copyGreenfootAssets} task writes this file into the
+     * assets root every time it runs, so it should always be up-to-date.
      */
     private static String loadFromCache() {
         try {
-            // Try LibGDX FileHandle first (works on Android)
-            if (Gdx.files != null) {
-                FileHandle cacheFile = Gdx.files.internal(CACHE_FILE);
-                if (cacheFile.exists()) {
-                    String cached = cacheFile.readString().trim();
-                    
-                    // Verify the cached folder still exists and has project.greenfoot
-                    FileHandle projectFile = Gdx.files.internal(cached + "/project.greenfoot");
-                    if (projectFile.exists()) {
-                        return cached;
-                    }
-                }
+            if (Gdx.files == null) return null;
+
+            FileHandle cacheFile = Gdx.files.internal(CACHE_FILE);
+            if (!cacheFile.exists()) return null;
+
+            String cached = cacheFile.readString().trim();
+            if (cached.isEmpty()) return null;
+
+            // Verify the cached folder still has project.greenfoot
+            FileHandle projectFile = Gdx.files.internal(cached + "/project.greenfoot");
+            if (projectFile.exists()) {
+                return cached;
             }
-            
-            // Fall back to java.io.File for desktop
-            File cacheFile = new File(CACHE_FILE);
-            if (cacheFile.exists()) {
-                Scanner scanner = new Scanner(cacheFile);
-                if (scanner.hasNextLine()) {
-                    String cached = scanner.nextLine().trim();
-                    scanner.close();
-                    
-                    // Verify the cached folder still exists and has project.greenfoot
-                    if (Gdx.files != null) {
-                        FileHandle projectFile = Gdx.files.internal(cached + "/project.greenfoot");
-                        if (projectFile.exists()) {
-                            return cached;
-                        }
-                    } else {
-                        File projectFile = new File("assets/" + cached + "/project.greenfoot");
-                        if (projectFile.exists()) {
-                            return cached;
-                        }
-                    }
-                    
-                    // Cache is stale, delete it
-                    cacheFile.delete();
-                }
-                scanner.close();
-            }
+
+            log("Cache value '" + cached + "' is stale (project.greenfoot not found)");
         } catch (Exception e) {
             System.err.println("GreenfootConfig: Error loading cache: " + e.getMessage());
         }
         return null;
     }
-    
+
+    // ------------------------------------------------------------------
+    //  Strategy 2: Scan with LibGDX FileHandle (Android-safe)
+    // ------------------------------------------------------------------
+
     /**
-     * Save the project folder name to cache file.
+     * On desktop the internal root is a real directory we can list.
+     * On Android {@code list()} on an internal directory returns the entries
+     * inside the APK assets, so this works cross-platform.
      */
-    private static void saveToCache(String folderName) {
+    private static String scanUsingLibGDX() {
         try {
-            FileWriter writer = new FileWriter(CACHE_FILE);
-            writer.write(folderName);
-            writer.close();
-            System.out.println("GreenfootConfig: Saved project folder to cache: " + folderName);
-        } catch (IOException e) {
-            System.err.println("GreenfootConfig: Error saving to cache: " + e.getMessage());
+            if (Gdx.files == null) return null;
+
+            // List the assets root
+            FileHandle assetsRoot = Gdx.files.internal("");
+            FileHandle[] children = assetsRoot.list();
+
+            if (children != null) {
+                for (FileHandle child : children) {
+                    if (child.isDirectory()) {
+                        FileHandle marker = child.child("project.greenfoot");
+                        if (marker.exists()) {
+                            return child.name();
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // list() may throw on some backends; fall through to next strategy
+            System.err.println("GreenfootConfig: Error scanning with LibGDX: " + e.getMessage());
         }
+        return null;
     }
+
+    // ------------------------------------------------------------------
+    //  Strategy 3: Parse assets.txt
+    // ------------------------------------------------------------------
+
+    /**
+     * The root {@code build.gradle} generates {@code assets.txt} listing every
+     * file in the assets directory. We scan it for lines matching
+     * {@code <folder>/project.greenfoot} and extract the folder name.
+     */
+    private static String scanAssetsTextFile() {
+        try {
+            if (Gdx.files == null) return null;
+
+            FileHandle assetsList = Gdx.files.internal("assets.txt");
+            if (!assetsList.exists()) return null;
+
+            String content = assetsList.readString();
+            for (String line : content.split("\\n")) {
+                String trimmed = line.trim();
+                if (trimmed.endsWith("/project.greenfoot") || trimmed.endsWith("\\project.greenfoot")) {
+                    // e.g. "MyGame/project.greenfoot" → "MyGame"
+                    int sep = trimmed.lastIndexOf('/');
+                    if (sep < 0) sep = trimmed.lastIndexOf('\\');
+                    if (sep > 0) {
+                        String folder = trimmed.substring(0, sep);
+                        // Handle nested paths: take only the top-level folder
+                        int firstSep = folder.indexOf('/');
+                        if (firstSep < 0) firstSep = folder.indexOf('\\');
+                        if (firstSep > 0) {
+                            folder = folder.substring(0, firstSep);
+                        }
+                        return folder;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("GreenfootConfig: Error parsing assets.txt: " + e.getMessage());
+        }
+        return null;
+    }
+
+    // ------------------------------------------------------------------
+    //  Path helpers (public API)
+    // ------------------------------------------------------------------
+
     /**
      * Get the path for images within the user's project.
      * @param filename The image filename
@@ -263,7 +278,7 @@ public class GreenfootProjectConfig {
         String projectFolder = getUserProjectFolder();
         return new String[] {
             projectFolder + "/images/" + filename,     // Project images folder
-            projectFolder + "/sounds/" + filename,     // Project sounds folder  
+            projectFolder + "/sounds/" + filename,     // Project sounds folder
             projectFolder + "/" + filename,            // Project root
             filename                                   // Assets root fallback
         };
@@ -282,7 +297,7 @@ public class GreenfootProjectConfig {
         sb.append("    Images: ").append(getImagesPath("test.png")).append("\n");
         sb.append("    Sounds: ").append(getSoundsPath("test.wav")).append("\n");
         sb.append("    Assets: ").append(getAssetPath("test.txt")).append("\n");
-        
+
         // Check if project.greenfoot file exists
         String projectFilePath = getAssetPath("project.greenfoot");
         boolean projectExists = false;
@@ -295,7 +310,7 @@ public class GreenfootProjectConfig {
             // Ignore
         }
         sb.append("  Project file exists: ").append(projectExists);
-        
+
         return sb.toString();
     }
 
@@ -303,19 +318,19 @@ public class GreenfootProjectConfig {
      * Force re-detection of the project folder (clears cache).
      */
     public static void forceRedetection() {
-        // Delete cache file
-        try {
-            File cacheFile = new File(CACHE_FILE);
-            if (cacheFile.exists()) {
-                cacheFile.delete();
-                System.out.println("GreenfootConfig: Cache cleared");
-            }
-        } catch (Exception e) {
-            System.err.println("GreenfootConfig: Error clearing cache: " + e.getMessage());
-        }
-        
-        // Reset and re-detect
         reset();
         getUserProjectFolder(); // This will trigger detection
+    }
+
+    // ------------------------------------------------------------------
+    //  Internal helpers
+    // ------------------------------------------------------------------
+
+    private static void log(String message) {
+        if (Gdx.app != null) {
+            Gdx.app.log("GreenfootConfig", message);
+        } else {
+            System.out.println("GreenfootConfig: " + message);
+        }
     }
 }

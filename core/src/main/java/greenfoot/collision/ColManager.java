@@ -31,17 +31,17 @@ import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.Pool;
 
 import greenfoot.Actor;
+import greenfoot.ActorVisitor;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * LibGDX-based collision manager that handles spatial partitioning and collision detection
- * using LibGDX's optimized data structures and math library.
+ * for Greenfoot actors using LibGDX's optimized data structures and math library.
  * 
  * This class re-implements greenfoot.collision.platforms.ColManager to provide a LibGDX backend,
- * mainly to allow Greenfoot projects to run on LibGDX (especially to export into
- * mobile devices and other platforms).
+ * mainly to allow Greenfoot projects to run on LibGDX platforms.
  * 
  * Inspired by the original Greenfoot project (GPLv2+ with Classpath Exception).
  * Read the original documentation at
@@ -50,6 +50,7 @@ import java.util.List;
  * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 
@@ -183,48 +184,28 @@ public class ColManager implements CollisionChecker {
     public <T extends Actor> List<T> getObjectsAt(int x, int y, Class<T> cls) {
         List<T> result = new ArrayList<T>();
         
-        float targetPixelX, targetPixelY;
-        
+        // Greenfoot's semantics: an actor is "at" a point when the point falls on the
+        // actor's image, whatever size that image is. The spatial grid is not used
+        // here: an actor's image can be far wider than a grid cell (a 384px wide
+        // button, say), so a neighbourhood scan would miss actors that do contain the
+        // point. The actor list per world is small enough for a linear scan.
+        float targetGreenfootX;
+        float targetGreenfootY;
         if (cellSize == 1) {
-            // When cellSize=1, x,y are Greenfoot pixel coordinates (Y-down from top)
-            // Convert to LibGDX pixel coordinates (Y-up from bottom) for distance calculation
-            targetPixelX = x;
-            targetPixelY = (worldHeight * cellSize) - y;  // Y-flip: Greenfoot to LibGDX
+            targetGreenfootX = x;
+            targetGreenfootY = y;
         } else {
-            // Normal case: Convert Greenfoot cell coordinates to LibGDX pixel coordinates with Y-axis inversion
-            targetPixelX = x * cellSize + cellSize / 2f;
-            targetPixelY = (worldHeight * cellSize) - (y * cellSize + cellSize / 2f);
+            targetGreenfootX = x * cellSize + cellSize / 2f;
+            targetGreenfootY = y * cellSize + cellSize / 2f;
         }
-        
-        // Get grid cell for spatial optimization
-        int gridX = (int) (targetPixelX / gridCellSize);
-        int gridY = (int) (targetPixelY / gridCellSize);
-        
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dy = -1; dy <= 1; dy++) {
-                int checkGridX = gridX + dx;
-                int checkGridY = gridY + dy;
-                
-                if (checkGridX >= 0 && checkGridX < gridWidth && checkGridY >= 0 && checkGridY < gridHeight) {
-                    Array<Actor> cellActors = spatialGrid[checkGridX][checkGridY];
-                    
-                    for (Actor actor : cellActors) {
-                        
-                        if (cls.isAssignableFrom(actor.getClass())) {
-                            float baseTolerance = Math.max(cellSize, 15); // Base tolerance
-                            float combatTolerance = Math.max(baseTolerance, 40); // Enhanced for combat
-                            //TODO: try lower combatTolerance value
-                            float dxDist = actor.getPixelX() - targetPixelX;
-                            float dyDist = actor.getPixelY() - targetPixelY;
-                            float distance = (float) Math.sqrt(dxDist * dxDist + dyDist * dyDist);
-                            
-                            if (distance <= combatTolerance) {
-                                if (!result.contains(actor)) {  // Avoid duplicates
-                                    result.add((T) actor);
-                                }
-                            }
-                        }
-                    }
+
+        for (Actor actor : allActors) {
+            if (!cls.isAssignableFrom(actor.getClass())) {
+                continue;
+            }
+            if (ActorVisitor.containsWorldPixel(actor, targetGreenfootX, targetGreenfootY)) {
+                if (!result.contains(actor)) {  // Avoid duplicates
+                    result.add((T) actor);
                 }
             }
         }

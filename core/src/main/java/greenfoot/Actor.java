@@ -47,6 +47,7 @@ import greenfoot.platforms.ActorDelegate;
  * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 public class Actor {
@@ -61,6 +62,10 @@ public class Actor {
     // LibGDX sprite for rendering and positioning
     protected Sprite sprite;
     protected Texture texture;
+
+    // The GreenfootImage last passed to setImage(), kept so getImage() returns
+    // the same instance and so render() can read its transparency setting.
+    private GreenfootImage currentImage;
     
     // Position in pixel coordinates
     protected Vector2 position;
@@ -283,9 +288,13 @@ public class Actor {
      * Get the current image of this actor.
      */
     public GreenfootImage getImage() {
+        if (currentImage != null) {
+            return currentImage;
+        }
         if (texture != null) {
             // Create a GreenfootImage from the texture using the internal constructor
-            return new GreenfootImage(texture);
+            currentImage = new GreenfootImage(texture);
+            return currentImage;
         }
         return new GreenfootImage(32, 32); // Default size
     }
@@ -301,12 +310,9 @@ public class Actor {
      * Set the image of this actor from a filename.
      */
     public void setImage(String filename) throws IllegalArgumentException {
-        try {
-            Texture newTexture = new Texture(Gdx.files.internal(filename));
-            setTexture(newTexture);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Could not load image: " + filename, e);
-        }
+        // Route through the GreenfootImage(filename) path so image caching,
+        // project-relative path resolution, and transparency tracking all apply.
+        setImage(new GreenfootImage(filename));
     }
 
     /**
@@ -319,25 +325,39 @@ public class Actor {
         }
         // Get the LibGDX texture from the GreenfootImage
         setTexture(image.getTexture());
+        // Keep the reference so getImage() returns the same instance and
+        // render() can read its transparency.
+        currentImage = image;
     }
-    
+
     /**
      * Set the texture of this actor.
      */
     public void setTexture(Texture texture) {
-        // IMPORTANT: Don't dispose textures here! 
+        // IMPORTANT: Don't dispose textures here!
         // Textures should be managed by GreenfootImage, not by individual actors
         // Multiple actors might share the same texture, so disposing here causes
         // the OpenGL "texture unloadable" issue and black sprite rendering
-        
+
         this.texture = texture;
+        // A texture set directly (not via setImage(GreenfootImage)) is no longer
+        // tracked against any GreenfootImage; setImage(GreenfootImage) restores
+        // currentImage right after calling this method.
+        this.currentImage = null;
         
         if (texture != null) {
             try {
                 if (sprite == null) {
                     sprite = new Sprite(texture);
                 } else {
+                    // Sprite.setTexture() swaps only the texture: the UV region and the
+                    // sprite's width/height stay at the previous image's values, so a
+                    // differently sized image would keep drawing (and hit-testing) at the
+                    // old size. Re-region and re-size the sprite to match.
                     sprite.setTexture(texture);
+                    sprite.setRegion(texture);
+                    sprite.setSize(texture.getWidth(), texture.getHeight());
+                    sprite.setOriginCenter();
                 }
                 
                 // Update sprite properties
@@ -481,37 +501,64 @@ public class Actor {
         }
     }
     
+    String dbgImageAlpha() {
+        return currentImage == null ? "no-image" : String.valueOf(currentImage.getTransparency());
+    }
+
+    String dbgSpriteInfo() {
+        if (sprite == null) return "null";
+        return (int) sprite.getX() + "," + (int) sprite.getY() + " "
+                + (int) sprite.getWidth() + "x" + (int) sprite.getHeight();
+    }
+
     /**
      * Render this actor using the provided SpriteBatch.
      */
     public void render(SpriteBatch batch) {
         if (sprite != null && world != null) {
             try {
+                // Pick up edits made in place through getImage(), and any texture the
+                // image had to regenerate, so the sprite never draws a stale texture.
+                if (currentImage != null) {
+                    Texture current = currentImage.getTexture();
+                    if (current != null && current != sprite.getTexture()) {
+                        texture = current;
+                        sprite.setTexture(current);
+                        sprite.setRegion(current);
+                        sprite.setSize(current.getWidth(), current.getHeight());
+                        updatePixelPosition();
+                    }
+                }
+
                 // Ensure texture is valid before drawing
                 if (sprite.getTexture() != null) {
                     // Check if this actor is being dragged for visual feedback
                     updateDragVisuals();
-                    
-                    // Apply drag visual effects
+
+                    // GreenfootImage.setTransparency() only stores a value; it must be
+                    // applied here as the sprite's draw alpha or it has no visual effect.
+                    float imageAlpha = currentImage != null ? currentImage.getTransparency() / 255f : 1f;
+
+                    // Sprite.draw() carries its own vertex colour and ignores the
+                    // batch colour, so the alpha has to go on the sprite itself.
+                    float alpha = isBeingDragged ? dragAlpha * imageAlpha : imageAlpha;
+                    float oldAlpha = sprite.getColor().a;
+                    sprite.setAlpha(alpha);
+
                     if (isBeingDragged) {
-                        // Make dragged object slightly transparent and larger
-                        com.badlogic.gdx.graphics.Color oldColor = batch.getColor();
-                        batch.setColor(oldColor.r, oldColor.g, oldColor.b, dragAlpha);
-                        
                         // Draw slightly larger for drag effect
                         float oldScaleX = sprite.getScaleX();
                         float oldScaleY = sprite.getScaleY();
                         sprite.setScale(oldScaleX * 1.1f, oldScaleY * 1.1f);
-                        
+
                         sprite.draw(batch);
-                        
-                        // Restore original scale and color
+
                         sprite.setScale(oldScaleX, oldScaleY);
-                        batch.setColor(oldColor);
                     } else {
-                        // Normal rendering
                         sprite.draw(batch);
                     }
+
+                    sprite.setAlpha(oldAlpha);
                 }
             } catch (Exception e) {
                 // Log the error but don't crash the rendering
@@ -615,6 +662,79 @@ public class Actor {
         }
     }
     
+    /**
+     * Fallback hit box (in pixels) for an actor that genuinely has no image at all.
+     * Kept small so an image-less actor is not clickable over a large invisible area.
+     */
+    private static final float DEFAULT_HIT_BOX = 8f;
+
+    /**
+     * The size of this actor's image in pixels, as the bounding rectangle of the
+     * image once the actor's rotation is applied - which is what Greenfoot uses
+     * both for mouse hit testing and for getObjectsAt().
+     *
+     * @return a two element array: {width, height}
+     */
+    float[] getHitBoxSize() {
+        float width = 0f;
+        float height = 0f;
+
+        // setTexture()/render() keep the texture field pointing at the texture of the
+        // actor's current GreenfootImage, so its size is the drawn size of the actor.
+        // (getImage() is avoided here: it fabricates a 32x32 image, and can build a
+        // whole Pixmap, for an actor that has none.)
+        if (texture != null) {
+            width = texture.getWidth();
+            height = texture.getHeight();
+        } else if (sprite != null) {
+            width = Math.abs(sprite.getWidth());
+            height = Math.abs(sprite.getHeight());
+        }
+        if (sprite != null && width > 0f && height > 0f) {
+            width *= Math.abs(sprite.getScaleX());
+            height *= Math.abs(sprite.getScaleY());
+        }
+        if (width <= 0f || height <= 0f) {
+            width = DEFAULT_HIT_BOX;
+            height = DEFAULT_HIT_BOX;
+        }
+
+        if (rotation % 180 != 0) {
+            double radians = Math.toRadians(rotation);
+            float cos = (float) Math.abs(Math.cos(radians));
+            float sin = (float) Math.abs(Math.sin(radians));
+            float rotatedWidth = width * cos + height * sin;
+            float rotatedHeight = width * sin + height * cos;
+            width = rotatedWidth;
+            height = rotatedHeight;
+        }
+
+        return new float[] { width, height };
+    }
+
+    /**
+     * Whether the given point falls inside this actor's image. The point is in
+     * Greenfoot pixel coordinates: origin top-left, y growing downwards, which is
+     * what both the unprojected mouse position and World.getObjectsAt() work in.
+     *
+     * @param pixelX x pixel coordinate, Greenfoot space
+     * @param pixelY y pixel coordinate, Greenfoot space
+     * @return true if the point is on this actor's image
+     */
+    boolean containsWorldPixel(float pixelX, float pixelY) {
+        if (world == null) {
+            return false;
+        }
+
+        int cellSize = world.getCellSize();
+        float centerX = x * cellSize + cellSize / 2f;
+        float centerY = y * cellSize + cellSize / 2f;
+
+        float[] hitBox = getHitBoxSize();
+        return Math.abs(pixelX - centerX) <= hitBox[0] / 2f
+            && Math.abs(pixelY - centerY) <= hitBox[1] / 2f;
+    }
+
     /**
      * Internal method to update collision bounds.
      */
@@ -805,8 +925,13 @@ public class Actor {
      * Clean up resources when actor is destroyed.
      */
     public void dispose() {
-        if (texture != null && texture != defaultTexture) {
-            texture.dispose();
-        }
+        // Do NOT dispose the texture here. It belongs to the GreenfootImage that
+        // produced it, and that image is regularly shared - static image fields and
+        // the GreenfootImage cache hand the same texture to other actors and worlds.
+        // Disposing it left those images pointing at a dead GL texture, which draws
+        // as a black rectangle. Same reasoning as setTexture().
+        texture = null;
+        sprite = null;
+        currentImage = null;
     }
 }

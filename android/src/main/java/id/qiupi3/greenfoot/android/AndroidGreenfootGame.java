@@ -1,226 +1,253 @@
+/*
+ This file is part of the LibGDX-Greenfoot wrapper.
+ Copyright (C) 2026 Qiupi3
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package id.qiupi3.greenfoot.android;
 
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
-import com.badlogic.gdx.scenes.scene2d.InputEvent;
-import com.badlogic.gdx.scenes.scene2d.Stage;
-import com.badlogic.gdx.scenes.scene2d.ui.ImageButton;
-import com.badlogic.gdx.scenes.scene2d.ui.Table;
-import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
-import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable;
-import com.badlogic.gdx.utils.viewport.ScreenViewport;
+import id.qiupi3.greenfoot.AndroidControllerConfig;
+import id.qiupi3.greenfoot.AndroidControllerConfig.ButtonType;
 import id.qiupi3.greenfoot.AndroidControllerInterface;
 import id.qiupi3.greenfoot.GreenfootGame;
+import id.qiupi3.greenfoot.VirtualController;
 
 /**
- * Android-specific version of GreenfootGame with virtual controls.
- * 
+ * Android-specific version of GreenfootGame.
+ *
+ * The on-screen pad itself lives in core ({@link VirtualController}) and is created
+ * and driven by {@link GreenfootGame}, because it is plain LibGDX drawing and touch
+ * polling with nothing Android-specific in it. What is left here is the Android
+ * flavour of the {@link AndroidControllerInterface} contract: identifying the
+ * platform, vibration, and translating the older {@link ButtonType} vocabulary into
+ * the key names the pad now speaks.
+ *
  * @author Qiupi3
+ * @author DavidsonRafaelK
  * @version 1.0
  */
 public class AndroidGreenfootGame extends GreenfootGame implements AndroidControllerInterface {
-    
-    private Stage uiStage;
-    private ImageButton upButton, downButton, leftButton, rightButton, actionButton;
+
     private boolean upPressed, downPressed, leftPressed, rightPressed, actionPressed;
-    private boolean controllerVisible = true;
-    
+    private float controllerOpacity = 0.55f;
+    private float controllerScale = 1.0f;
+
     @Override
     public void create() {
         super.create();
-        
-        // Initialize UI stage for controls
-        uiStage = new Stage(new ScreenViewport());
-        
-        // Create virtual controls
-        createVirtualControls();
-        
-        // Set input processor to handle both game and UI input
-        Gdx.input.setInputProcessor(uiStage);
-    }
-    
-    @Override
-    public void render() {
-        // Render the main game first
-        super.render();
-        
-        // Clear depth buffer for UI rendering
-        Gdx.gl.glClear(GL20.GL_DEPTH_BUFFER_BIT);
-        
-        // Render UI controls on top
-        if (controllerVisible) {
-            uiStage.act(Gdx.graphics.getDeltaTime());
-            uiStage.draw();
+
+        // Appearance only. Visibility is deliberately NOT applied here: super.create()
+        // has already built the first world, and a world's constructor commonly hides
+        // the pad (a menu, say). Re-applying the saved "showOnScreenControls" at this
+        // point would undo that, which is a difference only Android would have shown.
+        AndroidControllerConfig.ControllerConfiguration config = AndroidControllerConfig.getConfig();
+        if (config != null) {
+            setControllerOpacity(config.controllerOpacity);
+            setControllerScale(config.controllerScale);
         }
     }
-    
-    @Override
-    public void resize(int width, int height) {
-        super.resize(width, height);
-        uiStage.getViewport().update(width, height, true);
+
+    /** The shared pad, or null if this run has none. */
+    private VirtualController pad() {
+        return GreenfootGame.getVirtualController();
     }
-    
-    @Override
-    public void dispose() {
-        super.dispose();
-        if (uiStage != null) {
-            uiStage.dispose();
-        }
-    }
-    
-    private void createVirtualControls() {
-        // CONTROLLER SIZE CONFIGURATION:
-        // - buttonTextureSize: Resolution of button graphics (higher = sharper)
-        // - buttonDisplaySize: How big buttons appear on screen (higher = bigger buttons)  
-        // - spacingSize: Empty space between buttons (higher = more spread out)
-        
-        int buttonTextureSize = 96;
-        int buttonDisplaySize = 120;
-        int spacingSize = 80;
-        
-        // Create simple colored rectangles as button textures
-        Texture buttonTexture = createButtonTexture(buttonTextureSize, buttonTextureSize, 0.3f, 0.3f, 0.8f, 0.8f); // Semi-transparent blue
-        Texture pressedTexture = createButtonTexture(buttonTextureSize, buttonTextureSize, 0.5f, 0.5f, 1.0f, 0.9f); // Lighter when pressed
-        
-        TextureRegionDrawable buttonDrawable = new TextureRegionDrawable(new TextureRegion(buttonTexture));
-        TextureRegionDrawable pressedDrawable = new TextureRegionDrawable(new TextureRegion(pressedTexture));
-        
-        // Create directional buttons
-        upButton = createDirectionButton(buttonDrawable, pressedDrawable, true, () -> onUpPressed(true), () -> onUpPressed(false));
-        downButton = createDirectionButton(buttonDrawable, pressedDrawable, true, () -> onDownPressed(true), () -> onDownPressed(false));
-        leftButton = createDirectionButton(buttonDrawable, pressedDrawable, true, () -> onLeftPressed(true), () -> onLeftPressed(false));
-        rightButton = createDirectionButton(buttonDrawable, pressedDrawable, true, () -> onRightPressed(true), () -> onRightPressed(false));
-        
-        // Create action button
-        actionButton = createDirectionButton(buttonDrawable, pressedDrawable, false, () -> onActionPressed(true), () -> onActionPressed(false));
-        
-        // Layout the controls with the new sizes
-        layoutControls(buttonDisplaySize, spacingSize);
-    }
-    
-    private ImageButton createDirectionButton(TextureRegionDrawable normalDrawable, 
-                                            TextureRegionDrawable pressedDrawable, 
-                                            boolean isDirectional,
-                                            Runnable onTouchDown, 
-                                            Runnable onTouchUp) {
-        
-        ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle();
-        style.up = normalDrawable;
-        style.down = pressedDrawable;
-        
-        ImageButton button = new ImageButton(style);
-        
-        button.addListener(new ClickListener() {
-            @Override
-            public boolean touchDown(InputEvent event, float x, float y, int pointer, int button) {
-                onTouchDown.run();
-                return true;
-            }
-            
-            @Override
-            public void touchUp(InputEvent event, float x, float y, int pointer, int button) {
-                onTouchUp.run();
-            }
-        });
-        
-        return button;
-    }
-    
-    private void layoutControls(int buttonSize, int spacingSize) {
-        // Create main table for layout
-        Table mainTable = new Table();
-        mainTable.setFillParent(true);
-        
-        // Left side - D-pad
-        // LAYOUT CONFIGURATION:
-        // - buttonSize: Size of the actual clickable buttons
-        // - spacingSize: Size of empty spaces between buttons (affects D-pad spread)
-        Table dpadTable = new Table();
-        dpadTable.add().size(spacingSize, spacingSize); // Empty space (top-left)
-        dpadTable.add(upButton).size(buttonSize, buttonSize); // UP button
-        dpadTable.add().size(spacingSize, spacingSize); // Empty space (top-right)
-        dpadTable.row();
-        dpadTable.add(leftButton).size(buttonSize, buttonSize); // LEFT button  
-        dpadTable.add().size(spacingSize, spacingSize); // Center space
-        dpadTable.add(rightButton).size(buttonSize, buttonSize); // RIGHT button
-        dpadTable.row();
-        dpadTable.add().size(spacingSize, spacingSize); // Empty space (bottom-left)
-        dpadTable.add(downButton).size(buttonSize, buttonSize); // DOWN button
-        dpadTable.add().size(spacingSize, spacingSize); // Empty space (bottom-right)
-        
-        // Right side - Action button
-        Table actionTable = new Table();
-        actionTable.add(actionButton).size(buttonSize, buttonSize); // ACTION button
-        
-        // Position controls at bottom corners with padding
-        // POSITIONING CONFIGURATION: 
-        // - .pad(20): Distance from screen edges (increase for more margin)
-        mainTable.add(dpadTable).expand().bottom().left().pad(20);
-        mainTable.add(actionTable).expand().bottom().right().pad(20);
-        
-        uiStage.addActor(mainTable);
-    }
-    
-    private Texture createButtonTexture(int width, int height, float r, float g, float b, float a) {
-        // Create a simple colored texture for buttons
-        com.badlogic.gdx.graphics.Pixmap pixmap = new com.badlogic.gdx.graphics.Pixmap(width, height, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
-        pixmap.setColor(r, g, b, a);
-        pixmap.fillCircle(width/2, height/2, width/2 - 2);
-        pixmap.setColor(1, 1, 1, 0.6f); // White border
-        pixmap.drawCircle(width/2, height/2, width/2 - 2);
-        
-        Texture texture = new Texture(pixmap);
-        pixmap.dispose();
-        return texture;
-    }
-    
-    // AndroidControllerInterface implementation
-    @Override
-    public void onUpPressed(boolean pressed) {
-        this.upPressed = pressed;
-        // You can inject key events or handle movement directly here
-        if (pressed) {
-            // Simulate "up" key press for Greenfoot compatibility
-            // This can be handled by actors that check for input
-        }
-    }
-    
-    @Override
-    public void onDownPressed(boolean pressed) {
-        this.downPressed = pressed;
-    }
-    
-    @Override
-    public void onLeftPressed(boolean pressed) {
-        this.leftPressed = pressed;
-    }
-    
-    @Override
-    public void onRightPressed(boolean pressed) {
-        this.rightPressed = pressed;
-    }
-    
-    @Override
-    public void onActionPressed(boolean pressed) {
-        this.actionPressed = pressed;
-    }
-    
+
+    // ================ platform ================
+
     @Override
     public boolean isAndroid() {
         return true;
     }
-    
+
+    @Override
+    public void vibrate(long duration, float strength) {
+        try {
+            Gdx.input.vibrate((int) duration);
+        } catch (Exception e) {
+            Gdx.app.log("AndroidGreenfootGame", "Vibration not available: " + e.getMessage());
+        }
+    }
+
+    // ================ pad visibility and appearance ================
+
     @Override
     public void setControllerVisible(boolean visible) {
-        this.controllerVisible = visible;
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.setVisible(visible);
+        }
     }
-    
-    // Public getters for game logic to access button states
-    public boolean isUpPressed() { return upPressed; }
-    public boolean isDownPressed() { return downPressed; }
-    public boolean isLeftPressed() { return leftPressed; }
-    public boolean isRightPressed() { return rightPressed; }
-    public boolean isActionPressed() { return actionPressed; }
+
+    @Override
+    public void setButtonVisible(String buttonId, boolean visible) {
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.setSlotVisible(VirtualController.Slot.fromId(buttonId), visible);
+        }
+    }
+
+    @Override
+    public void setAllButtonsVisible(boolean visible) {
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.setAllSlotsVisible(visible);
+        }
+    }
+
+    @Override
+    public boolean isButtonVisible(String buttonId) {
+        VirtualController pad = pad();
+        return pad != null && pad.isSlotVisible(VirtualController.Slot.fromId(buttonId));
+    }
+
+    @Override
+    public void updateControllerLayout() {
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.resize();
+        }
+    }
+
+    @Override
+    public void setControllerOpacity(float opacity) {
+        this.controllerOpacity = opacity;
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.setOpacity(opacity);
+        }
+    }
+
+    @Override
+    public void setControllerScale(float scale) {
+        this.controllerScale = scale;
+        VirtualController pad = pad();
+        if (pad != null) {
+            pad.setScale(scale);
+        }
+    }
+
+    // ================ button state ================
+
+    @Override
+    public void onUpPressed(boolean pressed) {
+        this.upPressed = pressed;
+    }
+
+    @Override
+    public void onDownPressed(boolean pressed) {
+        this.downPressed = pressed;
+    }
+
+    @Override
+    public void onLeftPressed(boolean pressed) {
+        this.leftPressed = pressed;
+    }
+
+    @Override
+    public void onRightPressed(boolean pressed) {
+        this.rightPressed = pressed;
+    }
+
+    @Override
+    public void onActionPressed(boolean pressed) {
+        this.actionPressed = pressed;
+    }
+
+    @Override
+    public void onButtonPressed(ButtonType buttonType, boolean pressed) {
+        if (buttonType == null) {
+            return;
+        }
+        switch (buttonType) {
+            case UP: upPressed = pressed; break;
+            case DOWN: downPressed = pressed; break;
+            case LEFT: leftPressed = pressed; break;
+            case RIGHT: rightPressed = pressed; break;
+            case ACTION: actionPressed = pressed; break;
+            default: break;
+        }
+    }
+
+    /**
+     * Ask the pad whether the key this button type is mapped to is held. The mapping
+     * comes from {@link AndroidControllerConfig}, so a project that renamed a button's
+     * key keeps working.
+     */
+    @Override
+    public boolean isButtonPressed(ButtonType buttonType) {
+        if (buttonType == null) {
+            return false;
+        }
+        VirtualController pad = pad();
+        if (pad == null) {
+            return false;
+        }
+
+        AndroidControllerConfig.ControllerConfiguration config = AndroidControllerConfig.getConfig();
+        String keyName = config != null ? config.buttonMappings.get(buttonType) : null;
+        if (keyName == null) {
+            keyName = buttonType.name().toLowerCase();
+        }
+        return pad.isKeyDown(keyName);
+    }
+
+    @Override
+    public boolean isUpPressed() {
+        return upPressed || isVirtualKeyDown("up") || isVirtualKeyDown("w");
+    }
+
+    @Override
+    public boolean isDownPressed() {
+        return downPressed || isVirtualKeyDown("down") || isVirtualKeyDown("s");
+    }
+
+    @Override
+    public boolean isLeftPressed() {
+        return leftPressed || isVirtualKeyDown("left") || isVirtualKeyDown("a");
+    }
+
+    @Override
+    public boolean isRightPressed() {
+        return rightPressed || isVirtualKeyDown("right") || isVirtualKeyDown("d");
+    }
+
+    @Override
+    public boolean isActionPressed() {
+        return actionPressed || isVirtualKeyDown("space");
+    }
+
+    // ================ configuration ================
+
+    @Override
+    public AndroidControllerConfig.ControllerConfiguration getControllerConfig() {
+        return AndroidControllerConfig.getConfig();
+    }
+
+    @Override
+    public void setControllerConfig(AndroidControllerConfig.ControllerConfiguration config) {
+        if (config == null) {
+            return;
+        }
+        AndroidControllerConfig.setConfig(config);
+        setControllerOpacity(config.controllerOpacity);
+        setControllerScale(config.controllerScale);
+        setControllerVisible(config.showOnScreenControls);
+    }
 }

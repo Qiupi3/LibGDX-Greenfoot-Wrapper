@@ -19,32 +19,72 @@ dependencies {
   }
 }
 
-// Enhanced task to automatically copy all Greenfoot project assets
-tasks.register('copyGreenfootAssets', Copy) {
-    description 'Copies Greenfoot project assets (images, sounds, project.greenfoot) to assets directory'
-    
-    from('src/main/java/user-project') {
-        include '**/*.greenfoot'     // Copy project.greenfoot files
-        include '**/images/**'       // Copy all images
-        include '**/sounds/**'       // Copy all sounds
-    }
-    
-    into '../assets'
-    
-    // Preserve directory structure
-    includeEmptyDirs = false
-    
+// Enhanced task to automatically detect and copy Greenfoot project assets
+// preserving the project folder structure inside assets/.
+tasks.register('copyGreenfootAssets') {
+    description 'Detects the Greenfoot project folder inside user-project/ and copies it to assets/ preserving structure'
+
+    def userProjectDir = file('src/main/java/user-project')
+    def assetsDir = file('../assets')
+
+    // Gradle up-to-date checking
+    inputs.dir(userProjectDir).optional()
+    outputs.dir(assetsDir)
+
     doLast {
-        println "Copied Greenfoot project assets to assets directory"
-        
-        // List what was copied for verification
-        def assetsDir = file('../assets')
-        if (assetsDir.exists()) {
-            println "Assets directory contents:"
-            assetsDir.eachFileRecurse { file ->
-                if (file.isFile()) {
-                    println "  - ${file.path.substring(assetsDir.path.length() + 1)}"
-                }
+        if (!userProjectDir.exists() || !userProjectDir.isDirectory()) {
+            println "copyGreenfootAssets: user-project directory not found at ${userProjectDir.absolutePath}"
+            return
+        }
+
+        // --- Step 1: find the project subfolder (contains project.greenfoot) ---
+        File detectedProjectDir = null
+        String detectedProjectName = null
+
+        userProjectDir.eachDir { subdir ->
+            File marker = new File(subdir, 'project.greenfoot')
+            if (marker.exists()) {
+                detectedProjectDir = subdir
+                detectedProjectName = subdir.name
+            }
+        }
+
+        if (detectedProjectDir == null) {
+            println "copyGreenfootAssets: WARNING – no subfolder with project.greenfoot found in ${userProjectDir.absolutePath}"
+            println "copyGreenfootAssets: Make sure your Greenfoot project folder (e.g. MyGame/) is placed inside core/src/main/java/user-project/"
+            return
+        }
+
+        println "copyGreenfootAssets: Detected project folder: ${detectedProjectName}"
+
+        // --- Step 2: copy the whole project subfolder into assets/<ProjectName>/ ---
+        File targetDir = new File(assetsDir, detectedProjectName)
+
+        // Clean previous copy to avoid stale files
+        if (targetDir.exists()) {
+            project.delete(targetDir)
+        }
+
+        project.copy {
+            from detectedProjectDir
+            into targetDir
+            // Exclude Java source files – they are compiled, not loaded as assets
+            exclude '**/*.java'
+            exclude '**/*.class'
+        }
+
+        println "copyGreenfootAssets: Copied ${detectedProjectName}/ -> assets/${detectedProjectName}/"
+
+        // --- Step 3: write project_cache.txt so runtime detection is instant ---
+        File cacheFile = new File(assetsDir, 'project_cache.txt')
+        cacheFile.text = detectedProjectName
+        println "copyGreenfootAssets: Wrote project_cache.txt = ${detectedProjectName}"
+
+        // --- Step 4: summary ---
+        println "Assets directory contents after copy:"
+        assetsDir.eachFileRecurse { f ->
+            if (f.isFile()) {
+                println "  - ${assetsDir.toPath().relativize(f.toPath())}"
             }
         }
     }
@@ -63,7 +103,7 @@ afterEvaluate {
             dependsOn ':core:copyGreenfootAssets'
         }
     }
-    
+
     // For Android
     if (project(':android') != null) {
         project(':android').tasks.matching { it.name.contains('mergeDebugAssets') }.all {

@@ -34,8 +34,11 @@ import com.badlogic.gdx.math.Vector3;
  * This is a recreation of the original Greenfoot MousePollingManager but using
  * LibGDX as the backend instead of Swing.
  * 
- * @author Poul Henriksen (Original Greenfoot MousePollingManager author)
- * @modified-by Assistant (LibGDX wrapper implementation)
+ * @author Poul Henriksen (Original Greenfoot version's author)
+ * 
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
+ * @version 1.0
  */
 public class MousePollingManager
 {
@@ -374,7 +377,7 @@ public class MousePollingManager
             // This prevents attack clicks from triggering drag visuals
             if (dragDistance > 5) {
                 // Convert coordinates to Point for WorldHandler
-                java.awt.Point dragPoint = new java.awt.Point(px, py);
+                greenfoot.awt.Point dragPoint = new greenfoot.awt.Point(px, py);
                 
                 // Start the visual drag system
                 WorldHandler.getInstance().startDrag(dragActor, dragPoint, 1);

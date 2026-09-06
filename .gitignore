@@ -157,6 +157,10 @@ Thumbs.db
 .vscode/
 core/src/main/java/user-project/**/*
 assets/**/*
+# except the fonts, the wrapper itself ships DejaVu Sans, used by greenfoot.Font
+!assets/fonts/
+!assets/fonts/**
+!assets/controller.properties
 
 ## Special cases:
 
@@ -165,3 +169,6 @@ assets/**/*
 ## You could also add that configuration to the text in nativeimage.gradle .
 ## You should delete or comment out the next line if you have configuration in a different resource-config.json .
 **/resource-config.json
+
+## Local work reports (not part of the wrapper source):
+REPORT-*.md

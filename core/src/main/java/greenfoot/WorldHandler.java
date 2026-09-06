@@ -23,7 +23,7 @@
 package greenfoot;
 
 import com.badlogic.gdx.Gdx;
-import java.awt.Point;
+import greenfoot.awt.Point;
 
 /**
  * LibGDX-based WorldHandler implementation.
@@ -36,9 +36,10 @@ import java.awt.Point;
  * Read the original documentation at
  * https://www.greenfoot.org/files/javadoc/greenfoot/package-summary.html
  * 
- * @author Poul Henriksen (Original Greenfoot version's author)\
+ * @author Poul Henriksen (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 public class WorldHandler {
@@ -129,7 +130,9 @@ public class WorldHandler {
                 if (gameInstance != null) {
                     // LibGDX's setScreen will automatically dispose the old screen (world)
                     // so we need to be careful about the order of operations
-                    gameInstance.setScreen(newWorld);
+                    // Wrap in the Screen adapter: World is not a Screen, so that a
+                    // project's own show()/hide()/dispose() are never called by LibGDX.
+                    gameInstance.setScreen(newWorld.getScreen());
                 } else {
                     System.err.println("WorldHandler: GreenfootGame instance is null, cannot switch screen");
                 }
@@ -314,7 +317,7 @@ public class WorldHandler {
         int pixelY = (int) (world.getHeightInPixels() - worldCoords.y);
         
         // Update drag position with pixel coordinates (original Greenfoot behavior)
-        drag(dragActor, new java.awt.Point(pixelX, pixelY));
+        drag(dragActor, new Point(pixelX, pixelY));
     }
     
     /**

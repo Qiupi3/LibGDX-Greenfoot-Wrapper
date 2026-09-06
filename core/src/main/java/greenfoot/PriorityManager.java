@@ -37,7 +37,7 @@ package greenfoot;
  * If several of the same type of event happens, then the last one is used.
  * 
  * @author Poul Henriksen (Original Greenfoot version's author)
- * @modified-by Assistant (LibGDX wrapper implementation)
+ * @modified-by Qiupi3 (LibGDX wrapper implementation)
  */
 public class PriorityManager
 {

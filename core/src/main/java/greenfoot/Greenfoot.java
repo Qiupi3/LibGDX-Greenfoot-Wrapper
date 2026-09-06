@@ -47,6 +47,7 @@ import id.qiupi3.greenfoot.GreenfootGame;
  * @author Davin McCall (Original Greenfoot version's author)
  * 
  * @modified-by Qiupi3 (LibGDX wrapper implementation)
+ * @modified-by DavidsonRafaelK
  * @version 1.0
  */
 public class Greenfoot {
@@ -199,12 +200,98 @@ public class Greenfoot {
     
     /**
      * Return a random number between 0 (inclusive) and limit (exclusive).
-     * 
+     *
      * @param limit  An upper limit which the returned random number will be smaller than.
      * @return A random number within 0 to (limit-1) range.
      */
     public static int getRandomNumber(int limit) {
         return randomGenerator.nextInt(limit);
+    }
+
+    // ================ Virtual Controller (touch platforms) ================
+
+    /**
+     * Show or hide the on-screen virtual controller. This is an addition to the
+     * original Greenfoot API, for touch platforms such as Android. On platforms
+     * without an on-screen controller (desktop, HTML) the call does nothing.
+     *
+     * @param visible true to show the controller, false to hide it
+     */
+    public static void setVirtualControllerVisible(boolean visible) {
+        GreenfootGame.setVirtualControllerVisible(visible);
+    }
+
+    /**
+     * Hide every on-screen button except the named one. Useful for menus or
+     * dialogs where only a confirm button should stay reachable.
+     *
+     * @param buttonId Button id such as "btn_enter", "btn_action", "btn_up".
+     *                 The "btn_" prefix is optional.
+     */
+    public static void hideAllButtonsExcept(String buttonId) {
+        GreenfootGame.setAllVirtualButtonsVisible(false);
+        GreenfootGame.setVirtualControllerVisible(true);
+        GreenfootGame.setVirtualButtonVisible(buttonId, true);
+    }
+
+    /**
+     * Show every on-screen button again, undoing {@link #hideAllButtonsExcept(String)}.
+     */
+    public static void showAllButtons() {
+        GreenfootGame.setAllVirtualButtonsVisible(true);
+        GreenfootGame.setVirtualControllerVisible(true);
+    }
+
+    /**
+     * Show or hide a single on-screen button.
+     *
+     * @param buttonId Button id such as "btn_enter" ("btn_" prefix optional)
+     * @param visible true to show that button
+     */
+    public static void setButtonVisible(String buttonId, boolean visible) {
+        GreenfootGame.setVirtualButtonVisible(buttonId, visible);
+    }
+
+    /**
+     * Choose the on-screen pad layout. This is an addition to the original Greenfoot
+     * API, for touch platforms.
+     *
+     * @param layoutId "4-4" for four buttons each side, "4-2" for four on the left
+     *                 and two on the right
+     */
+    public static void setVirtualControllerLayout(String layoutId) {
+        GreenfootGame.setVirtualControllerLayout(layoutId);
+    }
+
+    /**
+     * Bind a key to one on-screen button. The button then reports that key through
+     * {@link #isKeyDown(String)} and labels itself with it.
+     *
+     * @param buttonId slot id: "left_up", "left_down", "left_left", "left_right",
+     *                 "right_1".."right_4", or "special" for a tap anywhere on screen
+     * @param keyName the Greenfoot key name to send, such as "w" or "space";
+     *                null clears the binding and hides the button
+     */
+    public static void mapVirtualButton(String buttonId, String keyName) {
+        GreenfootGame.mapVirtualButton(buttonId, keyName);
+    }
+
+    /**
+     * Hide the on-screen pad automatically whenever one of these classes is on screen,
+     * instead of calling {@link #setVirtualControllerVisible(boolean)} by hand.
+     *
+     * A World subclass hides the pad while that world is showing; an Actor subclass
+     * hides it while at least one actor of that class is in the world - which is the
+     * easy way to drop the pad during a dialogue, a menu overlay or a modal panel.
+     *
+     * <pre>
+     * Greenfoot.hideVirtualControllerFor(MainMenu.class, Credit.class, Dialog.class);
+     * </pre>
+     *
+     * @param classes the World and Actor classes that hide the pad; pass none to clear
+     */
+    public static void hideVirtualControllerFor(Class<?>... classes) {
+        GreenfootGame.setVirtualControllerHiddenFor(classes);
     }
 
     /**
@@ -347,6 +434,11 @@ public class Greenfoot {
                                   Gdx.input.isButtonPressed(Input.Buttons.RIGHT) ||
                                   Gdx.input.isButtonPressed(Input.Buttons.MIDDLE);
         
+        // Presses that belong to the on-screen pad are not mouse activity.
+        if (GreenfootGame.isTouchOnVirtualController()) {
+            return null;
+        }
+
         boolean hasActivity = Gdx.input.justTouched() || anyButtonPressed || mouseMoved(null);
         
         if (hasActivity || anyButtonPressed) {
@@ -581,68 +673,62 @@ public class Greenfoot {
             return true;
         }
         
+        // A touch that landed on an on-screen pad button belongs to the pad, not to the
+        // world: without this, every button press also registered as a click wherever
+        // the button happens to sit over the world.
+        if (GreenfootGame.isTouchOnVirtualController()) {
+            return false;
+        }
+
         // Get mouse coordinates in screen space
         int mouseX = Gdx.input.getX();
         int mouseY = Gdx.input.getY();
         
         World currentWorld = WorldHandler.getInstance().getWorld();
-        if (currentWorld == null) {
-            // For Actor objects, we can try an alternative approach without the world
-            if (obj instanceof Actor) {
-                Actor actor = (Actor) obj;
-                
-                try {
-                    float actorX = actor.getX();
-                    float actorY = actor.getY();
-                    
-                    float cellSize = 50f;
-                    float screenActorX = actorX * cellSize;
-                    float screenActorY = actorY * cellSize;
-                    
-                    // Simple bounding box check (rough approximation)
-                    boolean collision = Math.abs(mouseX - screenActorX) < cellSize/2 && 
-                                       Math.abs(mouseY - screenActorY) < cellSize/2;
-                    
-                    return collision;
-                } catch (Exception e) {
-                    return false;
-                }
+
+        if (obj instanceof Actor) {
+            Actor actor = (Actor) obj;
+
+            // An actor that has been removed from its world - possibly by another
+            // actor earlier in this very act cycle - is never under the mouse.
+            // Checking the world explicitly (rather than catching the exception)
+            // keeps a plain Greenfoot.mouseClicked(this) from blowing up with
+            // "Actor has been removed from the world." out of getX()/getY().
+            World actorWorld = actor.getWorld();
+            if (actorWorld == null) {
+                return false;
             }
-            
+
+            // Unproject through the active world when there is one; an actor that
+            // still belongs to a world can be queried before WorldHandler has been
+            // told about it, so fall back to the actor's own world.
+            World viewWorld = currentWorld != null ? currentWorld : actorWorld;
+
+            Vector3 actorCoords = new Vector3(mouseX, mouseY, 0);
+            viewWorld.getCamera().unproject(actorCoords);
+            // Greenfoot pixel space: origin top-left, y growing downwards.
+            float pointerX = actorCoords.x;
+            float pointerY = viewWorld.getHeightInPixels() - actorCoords.y;
+
+            // The actor's image, in Greenfoot pixel space, is the hit area - the same
+            // test World.getObjectsAt() uses, so both agree on what is under the mouse.
+            return actor.containsWorldPixel(pointerX, pointerY);
+        }
+
+        if (currentWorld == null) {
             // For non-Actor objects when world is null, return false
             return false;
         }
-        
+
         // Convert screen coordinates to world coordinates using camera
-        com.badlogic.gdx.math.Vector3 worldCoords = new com.badlogic.gdx.math.Vector3(mouseX, mouseY, 0);
+        Vector3 worldCoords = new Vector3(mouseX, mouseY, 0);
         currentWorld.getCamera().unproject(worldCoords);
         float worldX = worldCoords.x;
         float worldY = worldCoords.y;
-        
+
         float correctedWorldY = currentWorld.getHeightInPixels() - worldY;
-        
-        if (obj instanceof Actor) {
-            Actor actor = (Actor) obj;
-            
-            float actorX = actor.getX();
-            float actorY = actor.getY();
-            
-            //TODO: try lower value
-            float actorWidth = 80f;
-            float actorHeight = 80f;
-            
-            // Center the collision box around the actor position
-            float boxLeft = actorX - actorWidth/2;
-            float boxRight = actorX + actorWidth/2;
-            float boxBottom = actorY - actorHeight/2;
-            float boxTop = actorY + actorHeight/2;
-            
-            boolean collision = worldX >= boxLeft && worldX <= boxRight &&
-                               correctedWorldY >= boxBottom && correctedWorldY <= boxTop;
-            
-            return collision;
-            
-        } else if (obj instanceof World) {
+
+        if (obj instanceof World) {
             // Mouse is on world background if it's within world bounds
             World world = (World) obj;
             float worldWidth = world.getWidthInPixels();
@@ -655,7 +741,8 @@ public class Greenfoot {
         // Unknown object type, return false
         return false;
     }
-    
+
+
     /**
      * Poll for key input using LibGDX input system.
      */
@@ -1010,8 +1097,13 @@ public class Greenfoot {
             
             // Special keys
             case "space":
-                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE) ||
-                           Gdx.input.isButtonPressed(Input.Buttons.LEFT); // Left mouse button acts as space
+                // Only the actual space bar. This used to accept a left mouse button
+                // press as well, which on a touch screen means EVERY touch: tapping any
+                // pad button made isKeyDown("space") true at the same time, so pressing
+                // "w" turned the player and then fired the space action instead of
+                // walking. (Only a button bound to "f" escaped it, because "f" has no
+                // such alias.)
+                keyPressed = Gdx.input.isKeyPressed(Input.Keys.SPACE);
                 break;
             case "enter":
                 keyPressed = Gdx.input.isKeyPressed(Input.Keys.ENTER);
@@ -1046,28 +1138,9 @@ public class Greenfoot {
         }
         
         // VIRTUAL CONTROLLER INTEGRATION:
-        // Check virtual controller input for movement and action keys
-        // This allows existing Greenfoot.isKeyDown() calls to work with virtual controller!
-        switch (key) {
-            case "up":
-            case "w":
-                return GreenfootGame.isVirtualControllerPressed("up");
-            case "down":
-            case "s":
-                return GreenfootGame.isVirtualControllerPressed("down");
-            case "left":
-            case "a":
-                return GreenfootGame.isVirtualControllerPressed("left");
-            case "right":
-            case "d":
-                return GreenfootGame.isVirtualControllerPressed("right");
-            case "space":
-                return GreenfootGame.isVirtualControllerPressed("action"); // Map space bar to action button
-            case "enter":
-                return GreenfootGame.isVirtualControllerPressed("enter"); // Map enter to enter button
-            default:
-                return false;
-        }
+        // The on-screen pad binds each button to a Greenfoot key name, so any key the
+        // project asks about - not just the directions - can be produced by a button.
+        return GreenfootGame.isVirtualKeyDown(key);
     }
     
     // ================ Text Input Helper Methods ================

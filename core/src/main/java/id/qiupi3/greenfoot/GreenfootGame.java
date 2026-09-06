@@ -1,3 +1,25 @@
+/*
+ This file is part of the LibGDX-Greenfoot wrapper.
+ Copyright (C) 2026 Qiupi3
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+ This file is subject to the Classpath exception as provided in the
+ LICENSE file that accompanied this code.
+*/
+
 package id.qiupi3.greenfoot;
 
 import com.badlogic.gdx.Gdx;
@@ -7,9 +29,19 @@ import com.badlogic.gdx.utils.reflect.ReflectionException;
 
 import greenfoot.World;
 
-/** {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms. */
+/**
+ * {@link com.badlogic.gdx.ApplicationListener} implementation shared by all platforms.
+ * Manages game lifecycle, screen transitions, and virtual controller initialization.
+ * 
+ * @author Qiupi3
+ * @author DavidsonRafaelK
+ * @version 1.0
+ */
 public class GreenfootGame extends Game {
     private static GreenfootGame instance;
+
+    /** The on-screen pad, or null when this platform does not show one. */
+    private VirtualController virtualController;
 
     /**
      * Get the singleton instance of GreenfootGame
@@ -21,6 +53,15 @@ public class GreenfootGame extends Game {
     @Override
     public void create() {
         instance = this; // Store static reference for controller access
+
+        // The pad is for touch screens, but -Dgreenfoot.virtualController=true turns it
+        // on anywhere so it can be exercised on the desktop without a device.
+        if (isAndroidPlatform() || Boolean.getBoolean("greenfoot.virtualController")) {
+            virtualController = new VirtualController();
+            // A project configures the pad by shipping controller.properties; without
+            // one, the built-in 4-2 defaults apply.
+            virtualController.loadConfigFromAssets();
+        }
         
         // Try to find the main World subclass
         Class<?> mainWorldClass = findMainWorld();
@@ -32,11 +73,116 @@ public class GreenfootGame extends Game {
 
         try {
             World world = (World) ClassReflection.newInstance(mainWorldClass);
-            // CRITICAL: Register the world with the Greenfoot wrapper system first
+            // Registering the world sets the LibGDX screen too (through WorldHandler,
+            // which wraps the world in a WorldScreen), so there is nothing else to do.
             greenfoot.Greenfoot.setWorld(world);
-            setScreen(world); // World extends Screen in your wrapper
         } catch (ReflectionException e) {
             Gdx.app.error("GreenfootWrapper", "Failed to create World: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void render() {
+        // Read the pad before the world acts, so a button held this frame is already
+        // visible to isKeyDown() during act().
+        if (virtualController != null) {
+            virtualController.update();
+        }
+
+        super.render();
+
+        // Drawn last so it sits above the world.
+        if (virtualController != null) {
+            virtualController.render();
+        }
+    }
+
+    @Override
+    public void resize(int width, int height) {
+        super.resize(width, height);
+        if (virtualController != null) {
+            virtualController.resize();
+        }
+    }
+
+    @Override
+    public void dispose() {
+        super.dispose();
+        if (virtualController != null) {
+            virtualController.dispose();
+            virtualController = null;
+        }
+    }
+
+    /**
+     * The on-screen pad for this run.
+     *
+     * @return the controller, or null on a platform that shows none
+     */
+    public static VirtualController getVirtualController() {
+        return instance != null ? instance.virtualController : null;
+    }
+
+    /**
+     * Whether a key is currently held on the on-screen pad.
+     *
+     * @param keyName a Greenfoot key name such as "w" or "space"
+     * @return true if the pad is showing and a button bound to that key is held
+     */
+    public static boolean isVirtualKeyDown(String keyName) {
+        VirtualController controller = getVirtualController();
+        return controller != null && controller.isKeyDown(keyName);
+    }
+
+    /**
+     * Whether the touch that is happening belongs to the pad. Greenfoot's mouse
+     * polling uses this to ignore taps that landed on a button, which is what keeps
+     * a button press from also clicking the world underneath it.
+     *
+     * @return true if any pointer is currently down on a pad button
+     */
+    public static boolean isTouchOnVirtualController() {
+        VirtualController controller = getVirtualController();
+        return controller != null && controller.isAnyPointerConsumed();
+    }
+
+    /**
+     * Choose the pad layout.
+     *
+     * @param layoutId "4-4" or "4-2"
+     */
+    public static void setVirtualControllerLayout(String layoutId) {
+        VirtualController controller = getVirtualController();
+        VirtualController.Layout parsed = VirtualController.Layout.fromId(layoutId);
+        if (controller != null && parsed != null) {
+            controller.setLayout(parsed);
+        }
+    }
+
+    /**
+     * Bind a key to one pad slot. The button relabels itself to the key.
+     *
+     * @param slotId a slot id such as "left_up", "right_1" or "special"
+     * @param keyName the Greenfoot key name to send, or null to clear the slot
+     */
+    public static void mapVirtualButton(String slotId, String keyName) {
+        VirtualController controller = getVirtualController();
+        if (controller != null) {
+            controller.bind(VirtualController.Slot.fromId(slotId), keyName);
+        }
+    }
+
+    /**
+     * Hide the pad automatically whenever one of these World or Actor classes is on
+     * screen.
+     *
+     * @param classes World subclasses (hide while that world is showing) and Actor
+     *                subclasses (hide while such an actor is in the world)
+     */
+    public static void setVirtualControllerHiddenFor(Class<?>... classes) {
+        VirtualController controller = getVirtualController();
+        if (controller != null) {
+            controller.setHideFor(classes);
         }
     }
 
@@ -88,6 +234,12 @@ public class GreenfootGame extends Game {
      * Now supports the flexible button system with enhanced mappings.
      */
     public static boolean isVirtualControllerPressed(String direction) {
+        // The pad works in Greenfoot key names now, so a "direction" is just a key.
+        VirtualController pad = getVirtualController();
+        if (pad != null && pad.isKeyDown(direction)) {
+            return true;
+        }
+
         if (instance != null && instance instanceof AndroidControllerInterface) {
             AndroidControllerInterface controller = (AndroidControllerInterface) instance;
             
@@ -168,6 +320,56 @@ public class GreenfootGame extends Game {
         return false;
     }
     
+    /**
+     * Show or hide the whole on-screen virtual controller.
+     * Does nothing on platforms without one (e.g. desktop).
+     */
+    public static void setVirtualControllerVisible(boolean visible) {
+        VirtualController pad = getVirtualController();
+        if (pad != null) {
+            pad.setVisible(visible);
+        }
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setControllerVisible(visible);
+        }
+    }
+
+    /**
+     * Show or hide one on-screen button, identified by id ("btn_enter", "enter", ...).
+     */
+    public static void setVirtualButtonVisible(String buttonId, boolean visible) {
+        VirtualController pad = getVirtualController();
+        if (pad != null) {
+            pad.setSlotVisible(VirtualController.Slot.fromId(buttonId), visible);
+        }
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setButtonVisible(buttonId, visible);
+        }
+    }
+
+    /**
+     * Show or hide every on-screen button.
+     */
+    public static void setAllVirtualButtonsVisible(boolean visible) {
+        VirtualController pad = getVirtualController();
+        if (pad != null) {
+            pad.setAllSlotsVisible(visible);
+        }
+        AndroidControllerInterface controller = getController();
+        if (controller != null) {
+            controller.setAllButtonsVisible(visible);
+        }
+    }
+
+    private static AndroidControllerInterface getController() {
+        if (instance instanceof AndroidControllerInterface) {
+            return (AndroidControllerInterface) instance;
+        }
+        return null;
+    }
+
     /**
      * Check if running on Android platform
      */
